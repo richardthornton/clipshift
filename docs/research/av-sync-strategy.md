@@ -58,7 +58,25 @@ Because the audio crystal and the platform crystal are *independently* tolerance
 
 **The headline number for the project:** a naively written audio file — one that simply concatenates whatever WASAPI hands it and declares 48000 Hz in the header — will be visibly out of lip-sync **within about six minutes**, and will end a 4-hour session roughly **one second** adrift. This is not a subtle effect and it is not optional to fix.
 
-### 1.4 The one thing that does *not* matter
+### 1.4 How much error is allowed — the budget from the standard
+
+[ITU-R BT.1359-1, *Relative timing of sound and vision for broadcasting*](https://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.1359-1-199811-I!!PDF-E.pdf) (1998) is the primary source. Verbatim, from Appendix 1 §3:
+
+> Tests conducted have shown that the thresholds of detectability are about + 45 ms to –125 ms and thresholds of acceptability are about +90 ms to –185 ms on the average.
+
+with **NOTE 1 – "A positive value indicates that sound is advanced with respect to vision."** The asymmetry is real and worth internalising: the ear tolerates sound *late* (light arrives before sound in nature) far better than sound *early*.
+
+The `recommends` clauses give the engineering budget:
+
+> 2 that the overall tolerance in sound/picture timing (between points 1' and 6') shall not exceed +90 ms or –185 ms;
+> 4 that the timing difference in the path from the output of the final programme source selection element to the input to the transmitter for emission should be kept within the values +22.5 ms and –30 ms;
+> 5 if correction of errors is not possible then each downstream segment that is not under the control of the broadcaster shall not introduce any timing error in excess of ±2 ms.
+
+ClipShift sits at the very top of the chain — it *is* the source. Its output is not the finished programme; everything downstream (the edit, encoding, the viewer's TV) adds its own error to the same budget. The correct posture is therefore clause 5's: **be a segment that contributes no more than ±2 ms**, not one that spends the whole ±90 ms allowance.
+
+So: **design target ≤ 2 ms of total A/V misalignment at 4 hours**, and a hard fail at one video frame (16.67 ms at 60 fps). Both are far tighter than the ±45/–125 ms detectability thresholds — deliberately. The construction in §5.3 bounds the error at half a sample (10.4 µs) *permanently*, so this is not an ambitious target; it is roughly 200× of margin, and anything worse indicates a bug rather than a tuning shortfall.
+
+### 1.5 The one thing that does *not* matter
 
 QPC's own ±30–50 ppm absolute error is **irrelevant to this requirement.** Every ClipShift stream is derived from the same QPC reading, so an inaccurate QPC stretches all three files by the same factor and they stay mutually aligned. It affects only whether "4 hours" of recording is really 4 hours of wall-clock time (worst case ~0.7 s out over 4 h), which nobody will notice or care about. **Do not spend engineering effort disciplining the master clock.** Spend it on making every stream a function of it.
 
@@ -605,6 +623,17 @@ That is "guaranteed by construction" in the literal sense the ticket asks for. T
 
 The head trim/pad is the operation OBS already implements as `calc_offset_size()` (§2.6): convert `T0 − first_audio_qpc` into a sample count and discard (or, if audio started late, pad with) exactly that many sample-frames. Accuracy is one sample — 20.8 µs.
 
+**BWF `TimeReference` is the right timecode carrier, and its units are convenient.** From [EBU Tech 3285, *Broadcast Wave Format Specification*](https://tech.ebu.ch/docs/tech/tech3285.pdf), verbatim:
+
+> `DWORD TimeReferenceLow;  /* First sample count since midnight, low word */`
+> `DWORD TimeReferenceHigh; /* First sample count since midnight, high word */`
+
+> **TimeReference** — These fields shall contain the time-code of the sequence. It is a 64-bit value which contains the first sample count since midnight. The number of samples per second depends on the sample frequency which is defined in the field `<nSamplesPerSec>` from the `<format chunk>`.
+
+It is a **sample count**, not an HH:MM:SS:FF timecode — so there is no frame-rate rounding to negotiate, and the value ClipShift writes is exactly `round(48000 × seconds_since_local_midnight(T0))`. Both audio files get the *same* value (they share `T0`), which is what makes timecode-based auto-sync recover the correct relationship. The matching `tmcd` track on the video file must be derived from the same `T0`.
+
+FFmpeg will write this chunk (`-write_bext 1 -metadata time_reference=…`) but **never computes the value** and defaults it to 0 (§3.6) — so if ClipShift ever muxes through FFmpeg rather than writing WAV directly, this is a field it must populate itself.
+
 ### 6.3 The 4 GiB problem
 
 RIFF chunk sizes are 32-bit. Over a 4-hour session at 48 kHz:
@@ -709,7 +738,7 @@ This is nearly tautological given §8.1, which is exactly why it is a good regre
 
 The burst reaches the loopback file through the audio engine. For the microphone file, route the same signal into the input device (a virtual cable is cleaner than acoustic coupling; acoustic coupling adds ~3 ms/metre of unwanted-but-constant delay).
 
-Record for 4 hours. That is **240 marker events**.
+Emit a marker every **20 seconds**, not every 60 — see the resolution calculation below. Record for 4 hours. That is **720 marker events**.
 
 **Measurement.** For each marker *k*:
 - `t_v(k) = f_k / fps`, where `f_k` = index of the maximum-luminance frame
@@ -722,13 +751,23 @@ Record for 4 hours. That is **240 marker events**.
 
 **Criteria.**
 
-| Metric | Target | Hard fail |
+| Metric | Target (§1.4 budget) | Hard fail |
 |---|---|---|
-| Residual drift `|b|` | ≤ 0.35 ppm (≤ 5 ms over 4 h) | > 1.16 ppm (> 1 frame at 60 fps over 4 h) |
-| Max excursion `max|Δ(k) − a − b·t_v(k)|` | ≤ 5 ms | > 16.7 ms (one frame) |
-| Fixed offset `|a|` | reported, not gated | — |
+| Residual drift `\|b\|` | ≤ 0.14 ppm (≤ 2 ms over 4 h) | > 1.16 ppm (> 1 frame at 60 fps over 4 h) |
+| Max excursion `max\|Δ(k) − a − b·t_v(k)\|` | ≤ 2 ms | > 16.7 ms (one frame) |
+| Fixed offset `\|a\|` | reported, not gated — it is §9 item 1 | — |
 
-**Why the criteria are achievable to measure.** Video quantisation gives each `Δ(k)` a uniform ±½-frame error, σ = 16.67/√12 ≈ 4.8 ms. With N = 240 markers spread over 4 h (σ_t ≈ 4157 s), the standard error on the slope is roughly `4.8 ms / (√240 × 4157 s) ≈ 0.075 ppm`. The test resolves drift about five times finer than the 0.35 ppm target, so a pass is a real pass.
+**Why the criteria are measurable.** Video quantisation gives each `Δ(k)` a uniform ±½-frame error, σ = 16.67/√12 ≈ 4.81 ms. With N markers spread over 4 h (σ_t = 14400/√12 ≈ 4157 s), the standard error on the fitted slope is `σ / (σ_t·√N)`:
+
+| Marker interval | N | Slope SE | Equivalent error over 4 h |
+|---|---:|---:|---:|
+| 60 s | 240 | 0.075 ppm | 1.08 ms |
+| **20 s** | **720** | **0.043 ppm** | **0.62 ms** |
+| 10 s | 1440 | 0.030 ppm | 0.44 ms |
+
+At a 20-second interval the test resolves drift about three times finer than the 0.14 ppm target, so a pass is a real pass rather than a measurement floor. Sixty-second markers are marginal against a 2 ms budget; that is why the interval is specified.
+
+If tighter resolution is ever needed, replace the single white frame with a frame-indexed pattern (e.g. a binary-coded bar) so `f_k` can be recovered without ±½-frame ambiguity — but the regression above already has adequate margin and the simpler stimulus is easier to trust.
 
 **Why "max excursion" matters separately from slope.** A step correction — an inserted 70 ms silence, as OBS would produce — shows up as a small slope but a large excursion. The excursion criterion is what distinguishes "continuously locked" from "periodically re-synced".
 
@@ -750,7 +789,7 @@ Being explicit, because the ticket asks for it.
 
 4. **`GraphicsCaptureSession.MinUpdateInterval`** exists on Windows 11 build 26100+ and its [documentation page has no prose at all](https://learn.microsoft.com/en-us/uwp/api/windows.graphics.capture.graphicscapturesession.minupdateinterval) — only language signatures. Do not rely on it to guarantee idle frames.
 
-5. **ITU-R BT.1359-1** is the standard reference for perceptual lip-sync thresholds. Its PDF on itu.int could not be reliably extracted, and a first attempt returned figures that did not survive a verbatim re-check, so **no numbers from it are quoted in this document.** The engineering budget used here (≤ 5 ms target, ≤ 1 video frame hard limit) is derived from the frame period and is tighter than any perceptual threshold, so nothing depends on resolving this.
+5. **A methodological note on the ITU figures in §1.4.** A first automated read of the BT.1359-1 PDF returned "detectability ±90 ms, acceptability ±45 ms" — symmetric, in the wrong order, and wrong. The real text is "+45 ms to –125 ms" and "+90 ms to –185 ms", asymmetric, which is materially different guidance. The figures now quoted come from a direct decompression of the PDF's content streams, not from a summary. **Any figure in this document that is not quoted verbatim from a source should be treated as suspect until it is.**
 
 **None of this changes the shape of the project.** The separate-files alignment problem *does* have a clean answer, and it is §5.3. The residual uncertainties are a constant offset and a documentation gap, both manageable, neither structural.
 
@@ -762,14 +801,15 @@ Being explicit, because the ticket asks for it.
 
 - `QueryPerformanceCounter`, normalised once to **nanoseconds** at the boundary (`ticks × 1e9 / QueryPerformanceFrequency`, 128-bit intermediate; cache the frequency at startup as Microsoft instructs).
 - WASAPI hands 100 ns units — multiply by 100. DXGI hands raw ticks — normalise. Do not mix.
-- Do **not** attempt to discipline QPC against wall time. Its own error is irrelevant to mutual alignment (§1.4).
+- Do **not** attempt to discipline QPC against wall time. Its own error is irrelevant to mutual alignment (§1.5).
 - Detect suspend by comparing the QPC delta to the `QueryUnbiasedInterruptTimePrecise` delta.
 
 ### 10.2 The epoch, T0
 
 1. Open all audio capture clients **first**, and begin buffering with QPC anchors. Discard nothing yet.
-2. Start the video pacing clock. **`T0` = the first video grid tick's QPC value.**
+2. Acquire the first display surface, *then* start the video pacing clock. **`T0` = the first video grid tick's QPC value.** Do not start the grid before a surface exists, or the first frames are undefined; do not derive `T0` from the surface's own presentation timestamp (§2.2).
 3. Every file's item 0 corresponds to `T0`.
+4. `T0` is recorded once and never adjusted. Every subsequent length computation refers to it, so a bug in `T0` produces a uniform offset (visible immediately, in the first seconds of a test recording) rather than drift (visible only after hours). This is a deliberate property: it makes the failure mode cheap to detect.
 
 Rationale: video is the coarsest-grained stream (16.67 ms per item vs 20.8 µs), so anchoring on video costs at most half a sample of audio precision, whereas anchoring on audio would cost up to half a video frame. This is also OBS's choice (§2.6).
 
