@@ -38,6 +38,10 @@ Concretely:
    limitation rather than a reason to ask for admin rights. OBS makes the same call (§7).
 4. **Suppression** — the chord is passed through to the game. Raw Input cannot swallow it, and
    swallowing is not worth the cost of the mechanism that could.
+5. **ClipShift observes input and never synthesises it.** No `SendInput`, no `keybd_event`, ever.
+   This is the one anti-cheat constraint the primary record actually supports (§6, A8), and it is
+   free to honour today — but it is exactly the kind of line a small future convenience feature
+   would cross by accident, so it belongs in the spec rather than in someone's memory.
 
 The shape of the decision in one line: **observe input, never claim it — except for a moment at
 bind time, purely to ask the system whether anyone else already has.**
@@ -506,7 +510,128 @@ and a state query. There is no hook chain entry, no injected module, and no cros
 Whatever the residual risk of a hook is, these three carry strictly less of it. This is a structural
 argument from the API contracts cited throughout this document, not a vendor statement.
 
-<!-- ANTICHEAT_VENDOR -->
+**A4. No Western anti-cheat vendor documents keyboard hooks as a detection target — at all.**
+Across Easy Anti-Cheat/EOS, BattlEye, VAC, Riot Vanguard, EA Javelin and Denuvo Anti-Cheat, there
+is **no first-party page naming `SetWindowsHookEx`, `WH_KEYBOARD_LL`, or keyboard hooks** as a
+violation category, detection target or ban reason. This is a genuine absence in the record rather
+than a failed search — the vendors publish taxonomies, and hooks are not in them.
+
+The clearest evidence is Epic's, because Epic publishes the **complete enumerated list** of what
+Easy Anti-Cheat can report. Of its 16 values, the three relevant ones are:
+
+| Value | Documented meaning |
+|---|---|
+| `EOS_ACCVT_ForbiddenModuleLoaded` | "A disallowed code module was loaded **into the game process**" |
+| `EOS_ACCVT_ForbiddenToolDetected` | "A disallowed tool was detected **running in the system**" |
+| `EOS_ACCVT_SystemFileUntrusted` | "A system file failed an integrity check" |
+
+— [EOS_EAntiCheatClientViolationType](https://dev.epicgames.com/docs/api-ref/enums/eos-e-anti-cheat-client-violation-type)
+
+There is no "hook installed" category. `ForbiddenModuleLoaded` is scoped *into the game process* —
+exactly what Microsoft documents `WH_KEYBOARD_LL` as **not** doing (A1), and exactly what global
+`WH_KEYBOARD` **does** do. The vendor taxonomy and the Windows API contract line up precisely on
+the same boundary. `ForbiddenToolDetected` is identity-based — it is about *which program* is
+running, not which API it called.
+
+**A5. The documented consequence for legitimate software is *blocking*, not banning.** This
+distinction is drawn consistently and explicitly in first-party text, and it is the part the
+folklore most often gets wrong.
+
+BattlEye is the most direct:
+
+> "Generally we only ever ban for the use of actual cheats/hacks or components of such hacks which
+> are designed to intentionally bypass BE's protection. Otherwise you don't need to worry about
+> getting banned. For example, non-cheat overlays and visual enhancement tools like Reshade or
+> SweetFX are generally supported unless desired otherwise by the game developers… **We might decide
+> to kick (not ban) you at some point for using a specific program (such as macro tools), but that
+> won't automatically flag you as a cheater.**"
+> — [BattlEye FAQ](https://www.battleye.com/support/faq/)
+
+> "**No one is banned for using non-hack programs** (like Fraps, overlays, etc.)…"
+> — [BattlEye support](https://www.battleye.com/support/)
+
+Easy Anti-Cheat, on its player-facing site, is the only Western vendor to gesture at input tooling
+at all — and frames it the same way:
+
+> "EAC blocks software that interacts with games in ways that look identical to cheating techniques.
+> On rare occasions, this could include legitimate software whose behavior relies on special access
+> to the game process or system - such as **overlays, hardware monitoring and performance tools, or
+> automation software.**"
+>
+> "Most legitimate software conflicts can be resolved by updating or temporarily closing the
+> application. **The blocking is not permanent - it only prevents interaction while the game is
+> running.**"
+> — [Easy Anti-Cheat support articles](https://www.easy.ac/support/articles)
+
+**A6. Where vendors *do* publish denylists, the entries are kernel drivers.** Riot's "incompatible
+software" remediation is about `.sys` files — "take note of the file path shown in the error message
+(for example: `C:\Windows\System32\IncompatibleDriver.sys`)… delete the flagged **.sys** file if
+necessary"
+([VAN: Incompatible Software](https://support.riotgames.com/en-us/riot/performance/error-van-incompatible-software)).
+EA's published Javelin denylist is likewise almost entirely signed-but-vulnerable kernel drivers —
+ASRock, ASUS Aura, Dell `dbutil_2_3.sys`, Intel `iqvw64e.sys`, HWiNFO, CPU-Z, Process Explorer's
+`procexp152.sys`, Razer Synapse's `rzpnk.sys`
+([EA anticheat](https://help.ea.com/en/articles/platforms/pc-ea-anticheat/)). The threat model being
+policed is arbitrary kernel read/write, not user-mode input observation.
+
+**A7. Riot explicitly blesses overlays and draws the line at memory reading:**
+
+> "**Overlays and internal tools using the API, game client, and in-game APIs should continue to
+> function. External tools reading memory will no longer work**, and you'll need to change methods."
+>
+> "Is it possible to get on an allow list? **No - There is absolutely no allow list for Vanguard.**"
+> — [Riot developer support: Vanguard](https://support-developer.riotgames.com/hc/en-us/articles/28021427366163-Vanguard)
+
+**A8. The one modern model that genuinely touches input is about *synthesis*, not observation.**
+Denuvo Anti-Cheat's behavioural product documents that it will "Analyze raw mouse, keyboard and
+controller input to verify genuine human behavior" and "identifies inhuman input patterns generated
+by spoofing hardware", operating as a server-side filter and by "**detection only**"
+([Denuvo behavioral anti-cheat](https://irdeto.com/video-games/denuvo-anti-cheat/behavioral-anti-cheat),
+[Busting myths around Denuvo Anti-Cheat](https://irdeto.com/blog/busting-myths-around-denuvo-anti-cheat)).
+
+This is the most important vendor finding for ClipShift's spec, and it is a constraint on behaviour
+rather than on API choice: **an application that only observes keys and never synthesises them sits
+outside this model entirely.** ClipShift must never call `SendInput`, `keybd_event` or equivalent.
+That is cheap to guarantee and worth writing down.
+
+**A9. Valve publishes nothing.** VAC's public description is "Valve Anti-Cheat regularly checks the
+game files of all users connected to Valve's servers to ensure third party software is not being
+used which gives players an advantage", and "Valve does not disclose the cheats that were detected"
+([Valve Anti-Cheat FAQ](https://help.steampowered.com/en/faqs/view/571A-97DA-70E9-FF74)).
+Steamworks' anti-cheat documentation covers only the `ICheatReportingService` API
+([Steamworks anti-cheat](https://partner.steamgames.com/doc/features/anticheat)). **Anyone citing
+VAC's position on `SetWindowsHookEx` is not citing Valve.** Note also that Valve's own Steam Overlay
+injects into games.
+
+**A10. One genuine exception, and it is marketing copy.** nProtect GameGuard's product page lists
+"Detection of various attacks such as speed hacks, macros, **hooking**, debugging, etc."
+([nProtect GameGuard](https://www.inca.co.kr/en/products/nprotect/gameguard)). This is the only
+vendor found to publish the word at all. It names no API, does not distinguish hook types, states no
+policy or threshold, and GameGuard is largely confined to Korean-market titles. The category is
+named; the policy is not documented. Recorded so this section is not overclaimed.
+
+### Tier B — credible second-party evidence
+
+- **AutoHotkey vs. EA Javelin.** Numerous EA forum threads across BF1/BFV/BF2042/FC25/Skate report
+  the game **refusing to launch**, matching EA's documented block
+  ([example thread](https://forums.ea.com/discussions/battlefield-2042-technical-issues-en/autohotkey-error-start-to-appear-after-recent-updates-across-bf1-bfv-and-bf2042/12161280)).
+  Tellingly, some reporting users had never installed AutoHotkey — consistent with detection by
+  *identity*, not by hook API. The outcome is a launch block, not a ban.
+- **Microsoft PowerToys Keyboard Manager** — a first-party, global-hook keyboard tool. Microsoft
+  documents its limitations in games in detail: "Will this work on video games? … **It will also
+  depend on how the game accesses your keys. Certain keyboard APIs do not work with Keyboard
+  Manager.**" and "Remapping won't work on an app or window if that window is running in
+  administrator (elevated) mode and PowerToys is not running as administrator."
+  ([Keyboard Manager](https://learn.microsoft.com/en-us/windows/powertoys/keyboard-manager))
+  **It never mentions anti-cheat.** Microsoft ships a global keyboard hook, enumerates the ways it
+  breaks in games, and anti-cheat is not among them. A meaningful negative result.
+- **Vanguard vs. WinRing0** — a real, reproducible incompatibility, and once again a **kernel
+  driver** rather than a user-mode hook
+  ([openhardwaremonitor#1268](https://github.com/openhardwaremonitor/openhardwaremonitor/issues/1268)).
+  This is the pattern in every credible incident found.
+- **Hotkeys failing in-game** resolves, in report after report, to elevation rather than anti-cheat —
+  and reproduces identically against Task Manager, which has no anti-cheat at all. That is §5, not
+  §6.
 
 ### Tier C — folklore, labelled as such
 
@@ -514,26 +639,50 @@ The following circulate widely and **could not be substantiated from any primary
 this research. They are recorded here so that nobody re-derives them later and mistakes them for
 conclusions:
 
-- *"Anti-cheat bans you for using `SetWindowsHookEx`."* No vendor documentation found stating this.
-  The claim also usually elides the injecting/non-injecting distinction in A1.
+- *"`SetWindowsHookEx` will get you VAC banned."* Valve publishes nothing about hooks whatsoever
+  (A9). There is no source behind this.
+- *"Any global hook is injection, and injection means a ban."* Contradicted by Microsoft for the
+  low-level variants (A1). True only of non-LL global hooks, and even then the documented
+  consequence is blocking (A5).
+- *"Anti-cheat blocked my hotkey in-game."* Overwhelmingly UIPI/elevation (§5). It reproduces
+  against Task Manager, which has no anti-cheat.
+- *"AutoHotkey gets you banned."* The documented and reported outcome is a **launch block**.
+  BattlEye states macro tools are at most a kick (A5). Bans follow cheating *behaviour* — recoil
+  control, aim assist, botting — not API choice.
+- *"There's a secret whitelist for well-known apps."* Riot: "There is absolutely no allow list for
+  Vanguard." Neither EAC nor BattlEye documents an allowlist mechanism for overlays or companion
+  apps either.
 - *"OBS uses polling specifically to avoid anti-cheat."* The OBS source contains no such comment,
   and the originating commit has no explanatory message (§7). The outcome is real; the stated
   motive is invented.
-- *"Raw input is what anti-cheats want you to use."* No vendor says this. It happens to be true that
-  raw input is the least invasive option, but that conclusion comes from the Windows API contracts,
-  not from an anti-cheat vendor.
+- *"Raw input is what anti-cheats want you to use."* No vendor says this. Raw Input being the least
+  invasive option follows from the Windows API contracts, not from any anti-cheat vendor.
 
 ### What this means for ClipShift
 
-The recommendation does not depend on resolving the anti-cheat question, and that is deliberate.
-Raw Input (or polling) is the right mechanism on latency, reliability and .NET grounds alone (§2,
-§3, §10, §11). That it also has the smallest possible anti-cheat surface — because it does nothing
-to any other process — is a free property of the choice rather than the reason for it.
+**Two things follow, and only one of them is about the mechanism.**
 
-**The practical position: do not install a low-level keyboard hook, and you never have to have this
-argument** — with a vendor, with a user whose account was actioned for unrelated reasons, or in a
-support thread. Choosing the mechanism that provably touches nothing is worth more than a confident
-answer about which mechanisms are tolerated.
+**1. Do not install a low-level keyboard hook.** Not because it is documented as dangerous — it is
+not — but because avoiding it costs ClipShift nothing (§2, §3, §10, §11) and removes the argument
+entirely. Raw Input and polling do nothing to any other process: no hook chain entry, no injected
+module, no cross-process handle, nothing that appears in any vendor's published taxonomy. The
+smallest anti-cheat surface is a free property of the mechanism that was already the right choice
+on latency, reliability and .NET grounds.
+
+**2. Observe input; never synthesise it.** This is the binding constraint, and it is about
+behaviour rather than API. The one documented model that genuinely examines keyboard input is
+Denuvo's human-plausibility analysis of synthesised input (A8), and identity-based tool detection
+targets things that *act like macro engines* (A4, Tier B). ClipShift must never call `SendInput`,
+`keybd_event`, or any equivalent — a constraint worth carrying into the spec explicitly, because a
+future "auto-press this key when recording starts" feature is exactly the kind of small convenience
+that would move ClipShift from the safe category into the watched one.
+
+**And one thing that does not follow: a guarantee.** Because no vendor operates an allowlist, "will
+this application ever be blocked by some title" is **empirically determined per game and per
+anti-cheat client version, and is not answerable from documentation**. What the documentation does
+establish, and establishes well, is that being *banned* for observing keystrokes is not a documented
+outcome anywhere, and that the documented consequence for legitimate software is a temporary block
+that ends when the game closes (A5).
 
 ---
 
@@ -894,6 +1043,19 @@ reading:
    documentation; it is a per-title implementation detail in closed-source binaries.
 5. **What the NVIDIA App and Discord use internally.** Both are closed-source. Any claim about
    their mechanism is inference, and this document does not make one.
+6. **Whether any specific game will block ClipShift.** No anti-cheat vendor operates an allowlist,
+   and none publishes the criteria by which a legitimate program lands on a denylist. This is
+   determined empirically per title and per anti-cheat client version. The documentation supports
+   "very unlikely to be banned"; it cannot support "will never be blocked" (§6).
+7. **Whether the UIPI limitation is stated anywhere as an explicit negative.** Microsoft documents
+   that *UIAccess* processes gain cross-integrity input reading via low-level hooks and raw input,
+   and documents UIPI as a `GetAsyncKeyState` failure reason — but no single page says "a
+   medium-integrity process does not receive input while a high-integrity window has focus" in those
+   words. The conclusion in §5 is a strong inference from two first-party sources plus PowerToys'
+   documented behaviour, not a direct quotation.
+8. **nProtect GameGuard's actual policy on hooking.** It is the one vendor to publish the word, and
+   it publishes nothing beyond the word (§6, A10). XIGNCODE3/Wellbia could not be reached at all —
+   `wellbia.com` fails TLS negotiation — so no first-party evidence exists either way for it.
 
 ---
 
@@ -942,5 +1104,25 @@ reading:
 - [src/runner/hotkey_conflict_detector.cpp — `HasConflictWithSystemHotkey`, the `RegisterHotKey` probe](https://github.com/microsoft/PowerToys/blob/main/src/runner/hotkey_conflict_detector.cpp)
 - [src/runner/centralized_kb_hook.cpp — centralised low-level keyboard hook](https://github.com/microsoft/PowerToys/blob/main/src/runner/centralized_kb_hook.cpp)
 - [src/runner/centralized_hotkeys.cpp — `RegisterHotKey` path](https://github.com/microsoft/PowerToys/blob/main/src/runner/centralized_hotkeys.cpp)
+- [PowerToys Keyboard Manager docs — elevation and game limitations](https://learn.microsoft.com/en-us/windows/powertoys/keyboard-manager)
 
-<!-- SOURCES_EXTRA -->
+**Anti-cheat vendors — first party (Tier A)**
+
+- [Epic — `EOS_EAntiCheatClientViolationType` (the complete violation enum)](https://dev.epicgames.com/docs/api-ref/enums/eos-e-anti-cheat-client-violation-type)
+- [Epic — Using the Anti-Cheat Interfaces](https://dev.epicgames.com/docs/epic-online-services/trust-and-safety/anti-cheat-interfaces/using-anti-cheat)
+- [Easy Anti-Cheat — support articles, software & system compatibility](https://www.easy.ac/support/articles)
+- [BattlEye — FAQ](https://www.battleye.com/support/faq/)
+- [BattlEye — support](https://www.battleye.com/support/)
+- [Riot — developer support: Vanguard (overlays, no allow list)](https://support-developer.riotgames.com/hc/en-us/articles/28021427366163-Vanguard)
+- [Riot — VAN: Incompatible Software (`.sys` drivers)](https://support.riotgames.com/en-us/riot/performance/error-van-incompatible-software)
+- [EA — PC EA anticheat, published denylist](https://help.ea.com/en/articles/platforms/pc-ea-anticheat/)
+- [Valve — Anti-Cheat FAQ](https://help.steampowered.com/en/faqs/view/571A-97DA-70E9-FF74)
+- [Steamworks — anti-cheat documentation](https://partner.steamgames.com/doc/features/anticheat)
+- [Irdeto — Denuvo behavioral anti-cheat](https://irdeto.com/video-games/denuvo-anti-cheat/behavioral-anti-cheat)
+- [Irdeto — Busting myths around Denuvo Anti-Cheat](https://irdeto.com/blog/busting-myths-around-denuvo-anti-cheat)
+- [nProtect GameGuard — product page (the sole vendor mention of "hooking")](https://www.inca.co.kr/en/products/nprotect/gameguard)
+
+**Second party (Tier B)**
+
+- [EA forums — AutoHotkey launch blocks across Battlefield titles](https://forums.ea.com/discussions/battlefield-2042-technical-issues-en/autohotkey-error-start-to-appear-after-recent-updates-across-bf1-bfv-and-bf2042/12161280)
+- [openhardwaremonitor#1268 — Vanguard vs. the WinRing0 kernel driver](https://github.com/openhardwaremonitor/openhardwaremonitor/issues/1268)
