@@ -342,6 +342,28 @@ This is negative evidence rather than a positive guarantee: Microsoft does not d
 exclusive fullscreen changes keyboard delivery, and the mechanism it *does* document has nothing
 to do with input. That is the strongest statement the primary record supports.
 
+**And on modern Windows, "exclusive fullscreen" is frequently not exclusive at all.** Microsoft's
+DirectX engineering blog describes Fullscreen Optimizations:
+
+> "When using Fullscreen Optimizations, your game believes that it is running in Fullscreen
+> Exclusive, but behind the scenes, Windows has the game running in borderless windowed mode."
+>
+> "When an overlay such as the Game Bar is present, the DWM reassumes control of the display, and a
+> slight performance overhead is incurred so that the overlay can be composited on top of the game
+> in a safe and stable way."
+> — [Demystifying Fullscreen Optimizations](https://devblogs.microsoft.com/directx/demystifying-full-screen-optimizations/)
+
+Windows 11 extends the same treatment further, moving DirectX 10/11 windowed and borderless games
+from blt-model to flip-model presentation
+([Optimizations for windowed games in Windows 11](https://support.microsoft.com/en-us/windows/optimizations-for-windowed-games-in-windows-11-3f006843-2c7e-4ed0-9a5e-f9389e535952)),
+and Microsoft's guidance is that "Flip model presents make windowed mode effectively equivalent or
+better when compared to the classic 'fullscreen exclusive' mode"
+([For best performance, use DXGI flip model](https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/for-best-performance--use-dxgi-flip-model)).
+
+So the case ClipShift was told to worry about — a truly display-owning exclusive-fullscreen game —
+is both shrinking as a share of what users actually run, and unsupported by any documentation
+suggesting it would break keyboard observation in the first place.
+
 The historical mechanism people are remembering is **DirectInput exclusive-mode keyboard
 acquisition**, not DXGI. Microsoft has deprecated that path for keyboard and mouse:
 
@@ -450,7 +472,68 @@ Code signing and a Program Files installer are explicitly out of scope for the M
 
 ## 6. Anti-cheat
 
-<!-- ANTICHEAT -->
+This is the question in the issue that is hardest to answer honestly, because the internet's
+confident consensus about it is largely unsourced. The findings below are separated into what
+vendors and Microsoft actually **document**, and what is merely **asserted**. Treat the boundary
+as the most important thing in this section.
+
+### Tier A — what is actually documented
+
+**A1. `WH_KEYBOARD_LL` does not inject code into the game.** This is the single most consequential
+fact, and it is documented by Microsoft (quoted in full in §2):
+
+> "the **WH_KEYBOARD_LL** hook is not injected into another process. Instead, the context switches
+> back to the process that installed the hook and it is called in its original context."
+> — [LowLevelKeyboardProc](https://learn.microsoft.com/en-us/windows/win32/winmsg/lowlevelkeyboardproc)
+
+The mental model behind "anti-cheat bans you for keyboard hooks" is *"a hook means foreign code
+running inside the protected process"*. For the **non**-low-level `WH_KEYBOARD` that model is
+correct — Microsoft documents that the hook procedure must live in a DLL that gets injected
+([SetWindowsHookExW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowshookexw)).
+For `WH_KEYBOARD_LL` it is false. The two get conflated constantly, including by people arguing
+confidently about anti-cheat.
+
+**A2. It is nevertheless observable.** Not injecting is not the same as being invisible. A
+low-level hook is registered in a system-wide hook chain and the system marks hooked threads;
+Microsoft notes that with a global hook "the threads are still marked as 'hooked'"
+([SetWindowsHookExW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowshookexw)).
+A kernel-mode anti-cheat driver can see far more than that. So the honest framing is not "a hook is
+undetectable" but "a hook is detectable, and the question is what a vendor chooses to do about it."
+
+**A3. Raw Input, `RegisterHotKey` and `GetAsyncKeyState` do not touch the game's process at all.**
+They are, respectively, a registration for messages to your own window, a system-side key match,
+and a state query. There is no hook chain entry, no injected module, and no cross-process handle.
+Whatever the residual risk of a hook is, these three carry strictly less of it. This is a structural
+argument from the API contracts cited throughout this document, not a vendor statement.
+
+<!-- ANTICHEAT_VENDOR -->
+
+### Tier C — folklore, labelled as such
+
+The following circulate widely and **could not be substantiated from any primary source** during
+this research. They are recorded here so that nobody re-derives them later and mistakes them for
+conclusions:
+
+- *"Anti-cheat bans you for using `SetWindowsHookEx`."* No vendor documentation found stating this.
+  The claim also usually elides the injecting/non-injecting distinction in A1.
+- *"OBS uses polling specifically to avoid anti-cheat."* The OBS source contains no such comment,
+  and the originating commit has no explanatory message (§7). The outcome is real; the stated
+  motive is invented.
+- *"Raw input is what anti-cheats want you to use."* No vendor says this. It happens to be true that
+  raw input is the least invasive option, but that conclusion comes from the Windows API contracts,
+  not from an anti-cheat vendor.
+
+### What this means for ClipShift
+
+The recommendation does not depend on resolving the anti-cheat question, and that is deliberate.
+Raw Input (or polling) is the right mechanism on latency, reliability and .NET grounds alone (§2,
+§3, §10, §11). That it also has the smallest possible anti-cheat surface — because it does nothing
+to any other process — is a free property of the choice rather than the reason for it.
+
+**The practical position: do not install a low-level keyboard hook, and you never have to have this
+argument** — with a vendor, with a user whose account was actioned for unrelated reasons, or in a
+support thread. Choosing the mechanism that provably touches nothing is worth more than a confident
+answer about which mechanisms are tolerated.
 
 ---
 
@@ -832,6 +915,9 @@ reading:
 - [DXGI overview](https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/d3d10-graphics-programming-guide-dxgi)
 - [Introduction to DirectInput](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ee418273(v=vs.85))
 - [DirectInput](https://learn.microsoft.com/en-us/previous-versions/windows/desktop/ee416842(v=vs.85))
+- [For best performance, use DXGI flip model](https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/for-best-performance--use-dxgi-flip-model)
+- [Demystifying Fullscreen Optimizations — DirectX Developer Blog](https://devblogs.microsoft.com/directx/demystifying-full-screen-optimizations/)
+- [Optimizations for windowed games in Windows 11](https://support.microsoft.com/en-us/windows/optimizations-for-windowed-games-in-windows-11-3f006843-2c7e-4ed0-9a5e-f9389e535952)
 
 **Microsoft Learn — security model**
 
