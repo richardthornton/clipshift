@@ -10,7 +10,9 @@
 
 Drift is **fully solvable by construction**, and the construction is simpler than the framing of the ticket suggests. Pick one master clock (`QueryPerformanceCounter`). Make every output file a *pure function of that clock*: at any master-clock instant `t`, the video file must contain exactly `round(60 × (t − T0))` frames and each audio file exactly `round(48000 × (t − T0))` sample-frames, where `T0` is a single shared epoch. Never let a device's own clock decide how many items get written — the device decides only *what* the items contain. Under that rule the three files cannot drift apart, because their lengths are not measurements, they are computations from a shared variable. Rate discrepancy between the device clock and the master clock is absorbed by a drift-locked resampler on the audio path (continuous, inaudible) and by frame duplication on the video path (which OBS already does). Genuine discontinuities — glitches, device changes, suspend — are absorbed by inserting silence / repeating frames for exactly the gap duration, which preserves the invariant.
 
-**What is *not* solvable:** the fixed, undocumented acquisition-latency offset between "the instant the microphone diaphragm moved" and "the QPC timestamp WASAPI attached to that sample", versus the equivalent for the display path. That is a constant bias of order a few milliseconds, it is not drift, and no software can remove it without calibration hardware. OBS does not solve it either — it ships a per-source manual **Sync Offset** control (`obs-source.c`, `source->sync_offset`). ClipShift should do the same: a per-sink offset in the config file, default 0. See [§9](#9-what-is-genuinely-unsolved).
+**What is *not* solvable:** the fixed, undocumented acquisition-latency offset between "the instant the microphone diaphragm moved" and "the QPC timestamp WASAPI attached to that sample", versus the equivalent for the display path. That is a constant bias of order milliseconds to tens of milliseconds, it is **not drift**, and no software can remove it without measuring the specific rig. OBS does not solve it either — it ships a per-source manual **Sync Offset** control. ClipShift should do the same: a per-sink offset in the config file, default 0, with the measured value from the acceptance test as the recommended setting. See [§9](#9-what-is-genuinely-unsolved).
+
+**The numbers, up front.** Two independent consumer crystals differ by 60–100 ppm in the worst case, which is **0.86–1.44 seconds over four hours** and one 60 fps frame of error **within six minutes** if uncorrected ([§1.3](#13-what-that-means-for-a-4-hour-clipshift-session)). The budget to hit is **≤ 2 ms at four hours**, taken from ITU-R BT.1359-1's allowance for a segment outside the broadcaster's control ([§1.4](#14-how-much-error-is-allowed--the-budget-from-the-standard)). The construction above bounds the error at **half a sample — 10.4 µs — permanently**, so the target is met with roughly 200× of margin. There is no tuning here to get wrong.
 
 ---
 
@@ -650,6 +652,12 @@ WASAPI's shared-mode mix format is float32, so the naive "just write what WASAPI
 *(See §6.4 for the verified container details.)*
 
 ### 6.4 RF64, and how to grow into it
+
+The mechanism is described in [EBU Tech 3306](https://tech.ebu.ch/docs/tech/tech3306.pdf), verbatim:
+
+> RF64 achieved backwards compatibility with 32-bit BWF files by enabling on-the-fly switching from the BWF RIFF size field to the 64-bit `riffSize` value registered in a `<ds64>` chunk. This typically happens when a recording application passes the 4 Gbyte file size.
+
+(Tech 3306 also records that the format was adopted by the ITU as **Recommendation ITU-R BS.2088** — "BW64" — in October 2015, which is the standard to cite for anything new.)
 
 The RIFF→RF64 upgrade is worth understanding in detail because it interacts with the crash-survivability constraint. FFmpeg implements the canonical pattern in [`libavformat/wavenc.c`](https://raw.githubusercontent.com/FFmpeg/FFmpeg/master/libavformat/wavenc.c):
 
