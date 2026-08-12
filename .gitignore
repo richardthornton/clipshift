@@ -1,0 +1,21 @@
+# Agent tooling — never commit these (they contain nested git worktrees)
+.claude/
+.playwright-mcp/
+
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+artifacts/
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Local recordings and scratch output
+*.mp4
+*.mkv
+*.wav
+out/
