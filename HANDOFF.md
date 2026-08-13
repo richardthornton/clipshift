@@ -104,15 +104,37 @@ These cost real effort to pin down and shape several remaining decisions. Do not
 
 ## Prompt for the next session
 
+**Recommended: take #11.** It is a locking decision, nothing blocks it, and #15 just handed it three
+pieces of hard evidence — free Resolve imports a WAV whose size fields are still `0xFFFFFFFF`, it
+places a 48 kHz WAV sample-accurately with no rate error, and the video side of sync must be carried in
+an `elst`. Copy this in:
+
+```
+/wayfinder https://github.com/richardthornton/clipshift/issues/1 — work #11, Lock the audio file format.
+
+Read docs/research/resolve-truncated-mp4-import.md first: #15 was resolved by experiment last session
+and bears directly on this ticket. What it established that matters here — Resolve 20.3.2.9 free
+imports a killed WAV with its RIFF/data sizes unpatched and reports the same duration as a patched
+copy, so patching is insurance for other readers rather than a Resolve requirement; and audio is
+placed sample-accurately with no drift across a clip, so any misalignment the user ever sees will have
+come from ClipShift's own epoch handling, not from the NLE.
+
+Standing constraint worth restating: the NLE is DaVinci Resolve 20.3.2.9 FREE, not Studio. Check
+format claims against that edition specifically.
+```
+
+To take a different one instead, name it the same way. `/wayfinder` with no ticket named takes the
+first frontier ticket:
+
 ```
 /wayfinder https://github.com/richardthornton/clipshift/issues/1
 ```
 
-That loads the map and takes the first frontier ticket. To pick a specific one, name it:
-
-```
-/wayfinder https://github.com/richardthornton/clipshift/issues/1 — work #11, Lock the audio file format
-```
+**If you would rather close the loose end #15 left,** take #12 instead — an `elst` in a movie timescale
+of 1000 cannot express a sub-frame offset exactly, and whether Resolve rounds or truncates one was not
+tested. The rig for answering that is already in the repo under
+[`docs/research/experiments/resolve-truncated-import/`](docs/research/experiments/resolve-truncated-import/);
+it needs a click from Richard per run, because free Resolve refuses external scripting.
 
 Rules that matter: **resolve one ticket per session** (research tickets are the exception). Claim a ticket by assigning it to yourself *before* doing any work. Record a resolution as a comment on the ticket, close it, and append a one-line pointer to the map's Decisions-so-far. Do not restate a decision on the map — the map is an index, the ticket holds the detail.
 
