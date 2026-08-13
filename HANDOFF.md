@@ -1,6 +1,6 @@
 # ClipShift — session handoff
 
-**Last updated:** 13 August 2026, end of the session that locked the performance budget.
+**Last updated:** 13 August 2026, end of the session that built the performance measurement harness.
 
 ## What ClipShift is
 
@@ -14,8 +14,9 @@ A minimal, beautiful Windows app that records **one display** to a video-only fi
 
 ## State as of this handoff
 
-**Eleven tickets resolved and closed** — seven research tickets, three of the locking decisions, and the
-experiment that validated the first of them against the real NLE.
+**Fourteen tickets resolved and closed** — eight research tickets, the four locking decisions, the UI
+prototype, and the experiment that validated the container design against the real NLE. Three remain
+open: the harness, the spike, and the resampler.
 
 Research findings live on `main` under [`docs/research/`](docs/research/) — roughly 5,000 lines, every claim cited to a primary source, with explicitly-marked unsettled items in each. The documents are the authority; the ticket summaries are pointers.
 
@@ -160,12 +161,24 @@ These cost real effort to pin down and shape several remaining decisions. Do not
   App 11.0.7.247** are installed. **PresentMon, CapFrameX, MSI Afterburner/RTSS and OCAT are not.**
   #13 chose **Intel PresentMon CLI** as the instrument, so obtaining it (a single executable) is part
   of #14's setup. GPU driver is **610.62**.
-- **The game library cannot stress the card, and only six titles are actually installed** — Balatro,
-  Dorfromantik, Cairn, As Long As You're Here, Train Sim World 6. Steam shows ~40 entries; the rest are
-  lingering `appmanifest` files for uninstalled games, so **do not trust the manifest list** — check
-  `steamapps\common` on disk. **Train Sim World 6 is the only meaningful GPU load**, with Cairn (UE5)
-  as the fallback. Everything installed is UE or Unity, so nothing exercises an older presentation
-  path and #14's frame-time results will be specific to flip-model presentation.
+- **The game library. This fact was recorded wrongly and was corrected during #18 — 40 titles are
+  installed, not six.** The earlier probe checked only `C:\Program Files (x86)\Steam\steamapps\common`
+  and read everything else as lingering manifests. **There is a second Steam library at
+  `D:\SteamLibrary`** holding 34 more fully-installed games. When enumerating, walk every library
+  folder and check `StateFlags` in each `appmanifest_*.acf` (bit 2 set = fully installed); do not
+  infer from one library's `common` directory.
+- **GRID 2 is installed** — 9.64 GB on `D:`, `StateFlags=4`, on-disk size matching its manifest
+  exactly. It was previously believed uninstalled, and that belief shaped #13's whole load design.
+  It has a **scripted benchmark** (`grid2.exe -benchmark <file.xml>`, with `infinite_loop`,
+  `skipreplays` and a `hardwaresettings` attribute that pins the graphics settings from a file), so
+  the load can be *replayed* rather than performed. **#18 adopted it as the measurement load in place
+  of #13's fixed-camera Train Sim World 6.** Being a 2013 DX11 title it also covers the older
+  presentation path — so #14's results are no longer necessarily flip-model-only. The caveat that
+  replaces the old one: **GRID 2 is a light load on a 5060 Ti and will very likely not be GPU-bound at
+  60 fps without DSR**, which is the condition #13 §3 requires. See the perf-harness README.
+- Train Sim World 6 (71.84 GB) remains the heaviest modern load and the fallback if GRID 2 cannot be
+  driven GPU-bound. Other substantial installs: Phasmophobia, Escape Simulator, Demonologist,
+  7 Days to Die, Grounded, Little Nightmares III.
 - **Resolve can be scripted, but only from inside itself.** The free edition returns `None` from
   `scriptapp("Resolve")` for any external process, and the "External scripting using" preference has
   never been written to `config.dat`. A script dropped in
@@ -176,42 +189,47 @@ These cost real effort to pin down and shape several remaining decisions. Do not
 
 ## The frontier — what to pick up next
 
+**#14 was split during the #18 session.** It was the biggest ticket on the map by a wide margin — a
+capture path, an encoder session, four capture variants, a preset sweep, a statistics harness and a
+four-hour stability run. It is now three tickets: the instrument, the thing under test, and the
+measurement itself.
+
 **Takeable now, nothing blocking:**
 
-- [#9 Design the ClipShift window](https://github.com/richardthornton/clipshift/issues/9) — prototype ticket, needs Richard in the room. Independent of everything else.
-- [#12 Lock frame pacing and the constant-frame-rate policy](https://github.com/richardthornton/clipshift/issues/12) — note that the locked 1-second keyframe interval assumes CFR 60. #15 left it one question: an `elst` in a movie timescale of 1000 cannot express a sub-frame offset exactly, and whether Resolve rounds or truncates one was not tested.
-- [#16 Lock the resampler and the drift-correction control loop](https://github.com/richardthornton/clipshift/issues/16) — **new, raised by #11.** Now that ClipShift owns every sample-format conversion, the resampler is its own component doing two jobs at once (44.1→48 rate conversion and the continuous drift lock). Carries a licence edge: Secret Rabbit Code is GPL and incompatible with MIT, soxr is LGPL, and #3 established there is no LGPL obligation anywhere else in the project — so this would be the first.
-- [#14 Spike the capture-to-encode pipeline on real hardware](https://github.com/richardthornton/clipshift/issues/14) — **newly unblocked by #13.** This is where the architecture meets real silicon; everything else on the map is paper. It carries the budget, the load configuration and the measurement method from #13's resolution, plus the preset sweep.
+- [#18 Stand up the performance measurement harness and establish the noise floor](https://github.com/richardthornton/clipshift/issues/18) — **partly done; the remaining work needs the machine.** Scripts are built, tested against synthetic data and committed. What is left is the A/A control run, which needs an elevated shell, OBS streaming and GRID 2 looping its benchmark. Read the ticket comment before starting.
+- [#19 Build the capture-to-encode spike](https://github.com/richardthornton/clipshift/issues/19) — **the largest remaining build.** DDA capture, RGBA→NV12, direct NVENC over unmanaged function pointers, the #12 pacing grid, writing a raw H.264 elementary stream. Explicitly **no muxer** — it is a measurement instrument, not the app. Independent of #18, so the two can run in parallel.
+- [#16 Lock the resampler and the drift-correction control loop](https://github.com/richardthornton/clipshift/issues/16) — raised by #11, and #17 has already surveyed the options for it. Carries the project's only licence edge.
 
-**Blocked:** nothing. Every open ticket is takeable.
+**Blocked:**
+
+- [#14 Spike the capture-to-encode pipeline on real hardware](https://github.com/richardthornton/clipshift/issues/14) — blocked by both #18 and #19, wired natively. It now owns only the measurement and the verdict: run the sweeps, compare the variants, decide whether the architecture holds.
 
 ## Prompt for the next session
 
-**Recommended: take #12 next, then #14.** Not #14 immediately, for a reason #13 surfaced: the whole
-performance budget — and specifically the finding that ClipShift's GPU cost is per wall-clock second
-rather than per game frame — rests on ClipShift pacing at a strict **60 fps CFR**. That is exactly what
-#12 has not yet locked. If #12 lands on anything other than strict CFR, #14 will have spiked the wrong
-pipeline and measured it against a budget built on a different assumption. **#12 is small, #14 is the
-biggest ticket on the map, and doing them in that order means the expensive one is not built on a
-guess.** No blocking edge has been wired between them — this is a judgement call, and it was left for
-you to make rather than imposed. Wire it if you agree.
+**Recommended: take #19, the spike.** #18's remaining work is a sitting at the machine rather than a
+session's thinking — an elevated shell, OBS streaming, GRID 2 looping, one command, then read the
+noise floor. It is worth doing whenever you are at the keyboard anyway, and it does not need a fresh
+agent session to hold much context. **#19 is the opposite**: the largest remaining build on the map,
+and the one that can be driven a long way without you in the room.
+
+The two are independent, so the order between them is free. What is *not* free is #14, which is
+blocked on both.
 
 ```
-/wayfinder https://github.com/richardthornton/clipshift/issues/1 — work #12, Lock frame pacing and
-the constant-frame-rate policy.
+/wayfinder https://github.com/richardthornton/clipshift/issues/1 — work #19, Build the
+capture-to-encode spike.
 
-This is now upstream of the hardware spike in practice, even though no blocking edge is wired. #13
-locked a performance budget whose central finding — that ClipShift's GPU cost is per wall-clock
-second, not per game frame — assumes strict 60 fps CFR pacing. If this ticket lands anywhere else,
-#13's budget needs revisiting before #14 spends real effort.
+This is the instrument under test for #14, not the beginnings of the app. It is throwaway. It
+writes a raw H.264 elementary stream and NO muxer — the muxer is the riskiest code in the project
+and contributes nothing to a performance number.
 
-Two loose ends this inherits. #10's 1-second keyframe interval assumes CFR 60. And #15 left one
-question untested: an elst in a movie timescale of 1000 cannot express a sub-frame offset exactly,
-and whether Resolve rounds or truncates one was never measured. The rig is in the repo under
-docs/research/experiments/resolve-truncated-import/.
+Read #2, #3, #10 and #12's resolution comments before writing anything: they fix the capture API,
+the NVENC access path, the encoder settings and the pacing grid respectively. The variants have to
+be switchable by command-line flag, because rebuilding between runs would break the interleaving
+that #13's method depends on.
 
-Standing constraint worth restating: the NLE is DaVinci Resolve 20.3.2.9 FREE, not Studio. Check
-format claims against that edition specifically.
+Standing gotcha for this build: .NET 8 CsWinRT COM interop must use vtable calls or
+MarshalInterface, never a cast on __ComObject.
 ```
 
 To take a different one instead, name it the same way. `/wayfinder` with no ticket named takes the
@@ -223,17 +241,14 @@ first frontier ticket:
 
 **The alternatives, with a specific reason to prefer each:**
 
-- **#14**, if you accept the CFR-60 assumption and want the paper tested against silicon now. It is
-  where every architectural decision on this map finally gets checked, and it is **substantially
-  larger than any ticket resolved so far** — a DDA capture path, an NVENC session, a muxer stub, four
-  capture variants and a preset sweep. Expect it to need scoping down or splitting rather than
-  resolving in one session. Its setup is spelled out in a comment on the ticket, and PresentMon still
-  needs obtaining.
+- **#18**, if you are at the machine and want the harness proven before more is built on it. It is one
+  command plus the setup around it, and it is the only thing that will tell you the instrument works
+  before hours are spent generating numbers with it. Expect the GPU-bound-at-60 tuning to be the
+  fiddly part.
 - **#16**, if the licence question feels urgent. It is the only ticket with a legal edge rather than a
-  technical one: the obvious resampler (Secret Rabbit Code) is GPL and cannot be used in an MIT
-  project at all.
-- **#9**, if you want a break from systems work. It is the UI prototype, needs you in the room, and is
-  independent of everything else on the map.
+  technical one, and #17 has already surveyed the ground for it: libsamplerate turned out to be BSD-2
+  rather than GPL, soxr's variable-rate mode is a trap, and libswresample is the only option that
+  passes both filters cleanly.
 
 Both Resolve experiment rigs need **one click from Richard per run** — free Resolve refuses external
 scripting connections, so batch everything into a single script before asking. Budget for the harness
