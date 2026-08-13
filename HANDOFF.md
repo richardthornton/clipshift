@@ -161,24 +161,30 @@ These cost real effort to pin down and shape several remaining decisions. Do not
   App 11.0.7.247** are installed. **PresentMon, CapFrameX, MSI Afterburner/RTSS and OCAT are not.**
   #13 chose **Intel PresentMon CLI** as the instrument, so obtaining it (a single executable) is part
   of #14's setup. GPU driver is **610.62**.
-- **The game library. This fact was recorded wrongly and was corrected during #18 — 40 titles are
-  installed, not six.** The earlier probe checked only `C:\Program Files (x86)\Steam\steamapps\common`
-  and read everything else as lingering manifests. **There is a second Steam library at
-  `D:\SteamLibrary`** holding 34 more fully-installed games. When enumerating, walk every library
-  folder and check `StateFlags` in each `appmanifest_*.acf` (bit 2 set = fully installed); do not
-  infer from one library's `common` directory.
-- **GRID 2 is installed** — 9.64 GB on `D:`, `StateFlags=4`, on-disk size matching its manifest
-  exactly. It was previously believed uninstalled, and that belief shaped #13's whole load design.
-  It has a **scripted benchmark** (`grid2.exe -benchmark <file.xml>`, with `infinite_loop`,
-  `skipreplays` and a `hardwaresettings` attribute that pins the graphics settings from a file), so
-  the load can be *replayed* rather than performed. **#18 adopted it as the measurement load in place
-  of #13's fixed-camera Train Sim World 6.** Being a 2013 DX11 title it also covers the older
-  presentation path — so #14's results are no longer necessarily flip-model-only. The caveat that
-  replaces the old one: **GRID 2 is a light load on a 5060 Ti and will very likely not be GPU-bound at
-  60 fps without DSR**, which is the condition #13 §3 requires. See the perf-harness README.
-- Train Sim World 6 (71.84 GB) remains the heaviest modern load and the fallback if GRID 2 cannot be
-  driven GPU-bound. Other substantial installs: Phasmophobia, Escape Simulator, Demonologist,
-  7 Days to Die, Grounded, Little Nightmares III.
+- **The game library — six titles installed**, and **the authoritative check is
+  `steamapps\libraryfolders.vdf`**, nothing else. It lists the libraries Steam actually uses and the
+  appids in each. At time of writing it holds exactly one entry,
+  `C:\Program Files (x86)\Steam`, with six apps: Steamworks Common Redistributables, Dorfromantik,
+  Cairn, Balatro, As Long As You're Here, and Train Sim World 6 (77 GB).
+- **`D:\SteamLibrary` is an ORPHANED library and is a trap.** It holds ~34 games' worth of real files
+  and complete `appmanifest_*.acf` files frozen since January 2024, **but it is not registered in
+  `libraryfolders.vdf`, so Steam does not know it exists and none of those games are installed.** The
+  #18 session was fooled by it: an `appmanifest` with `StateFlags=4` and an on-disk size matching its
+  manifest byte for byte is *still not an install* if the library is not registered. `StateFlags` is a
+  snapshot of a state that stopped being current when the library was de-registered. **Do not check
+  `steamapps\common` directories, and do not trust stray manifests — read `libraryfolders.vdf`.**
+  (Re-adding the folder via Steam → Settings → Storage → Add Drive should adopt those installs without
+  re-downloading, if the ~34 games are ever wanted back.)
+- **GRID 2 was installed deliberately during #18** to serve as the measurement load, replacing #13's
+  fixed-camera Train Sim World 6 scene. It has a **scripted benchmark**
+  (`grid2.exe -benchmark <file.xml>`, with `infinite_loop`, `skipreplays` and a `hardwaresettings`
+  attribute that pins graphics settings from a file), so the load is *replayed* rather than performed
+  — determinism bought outright rather than statistically. Being a 2013 DX11 title it also covers the
+  older presentation path #13 noted nothing installed could reach. **Caveat: it is a light load on a
+  5060 Ti and will very likely not be GPU-bound at 60 fps without DSR**, which is what #13 §3
+  requires. See the perf-harness README.
+- Train Sim World 6 remains the heaviest modern load and the fallback if GRID 2 cannot be driven
+  GPU-bound.
 - **Resolve can be scripted, but only from inside itself.** The free edition returns `None` from
   `scriptapp("Resolve")` for any external process, and the "External scripting using" preference has
   never been written to `config.dat`. A script dropped in

@@ -20,16 +20,23 @@ operate the rig, and the things that are true of the rig rather than of the budg
 
 ## Why the load is GRID 2
 
-#13 designed its load around a stated environment fact: that only six games were
-installed and **no deterministic benchmark was available**, so repeatability had to be
-bought statistically from a fixed camera in Train Sim World 6.
+#13 designed its load around the environment fact that only six games were installed and
+**no deterministic benchmark was available**, so repeatability had to be bought
+statistically from a fixed camera in Train Sim World 6. That fact was correct.
 
-**That fact was wrong.** There is a second Steam library on `D:` holding 34 more
-fully-installed titles, GRID 2 among them — 9.64 GB on disk, `StateFlags=4`, matching its
-manifest exactly. The earlier probe looked only at the `C:` library's `common` folder and
-read the `D:` entries as lingering manifests for uninstalled games.
+**GRID 2 was therefore installed deliberately, to be the measurement load.**
 
-GRID 2 changes the picture in three ways:
+> **A wrong turn worth recording, because the trap is a convincing one.** The #18 session
+> first concluded GRID 2 was *already* installed: `D:\SteamLibrary` holds its complete
+> files and an `appmanifest_44350.acf` with `StateFlags=4` and an on-disk size matching
+> the manifest byte for byte. All of that was true and all of it was irrelevant —
+> **`D:\SteamLibrary` is not registered in `steamapps\libraryfolders.vdf`**, so Steam does
+> not know it exists and nothing in it is installed. The manifest was a frozen snapshot
+> from January 2024 of a library that has since been de-registered. **The only
+> authoritative check is `libraryfolders.vdf`**; neither a `common` directory nor a
+> `StateFlags` value can tell you a game is installed.
+
+GRID 2 earns the job for three reasons:
 
 1. **It has a scripted benchmark** — `grid2.exe -benchmark <file.xml>` — so the load is
    replayed rather than performed. That is determinism bought outright instead of
