@@ -1,0 +1,671 @@
+<title>ClipShift Window Bench</title>
+
+<!--
+  THROWAWAY PROTOTYPE — wayfinder ticket #9 "Design the ClipShift window".
+  Three variants of the ClipShift window, switchable via ?variant=A|B|C and the
+  floating bottom bar, each renderable in four states. Not production code:
+  no tests, no error handling, no framework, hard-coded devices.
+
+  Deliberately single-theme. The subject is a near-black app window; rendering
+  the bench in light mode would make the thing under evaluation unjudgeable.
+-->
+
+<style>
+  :root {
+    /* bench */
+    --bench:        #0b0c0e;
+    --bench-2:      #101215;
+    --bench-line:   #1e2126;
+    /* app surfaces */
+    --app:          #141619;
+    --app-raised:   #1c1f24;
+    --app-sunken:   #0f1113;
+    --line:         #272b31;
+    --line-soft:    #1f2328;
+    /* text */
+    --fg:           #e6e8eb;
+    --fg-2:         #949aa3;
+    --fg-3:         #5f666f;
+    /* one accent — cold, so it never competes with the record red */
+    --accent:       #66c6d9;
+    --accent-dim:   #234a52;
+    /* semantic, separate from the accent */
+    --rec:          #ff4d3d;
+    --warn:         #e0a33e;
+
+    --sans: ui-sans-serif, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+
+    --r-sm: 4px;
+    --r-md: 7px;
+    --r-lg: 11px;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bench);
+    color: var(--fg);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 40px 24px 140px; }
+
+  /* ---------- bench chrome ---------- */
+
+  .eyebrow {
+    font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+    color: var(--fg-3); margin: 0 0 10px;
+  }
+  h1 { font-size: 25px; line-height: 1.25; margin: 0 0 12px; font-weight: 600; text-wrap: balance; }
+  .lede { color: var(--fg-2); margin: 0 0 32px; max-width: 62ch; }
+  .lede code { font-family: var(--mono); font-size: .88em; color: var(--fg); }
+
+  .bench-bar {
+    display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-end;
+    padding-bottom: 18px; border-bottom: 1px solid var(--bench-line); margin-bottom: 32px;
+  }
+  .field { display: flex; flex-direction: column; gap: 7px; }
+  .field > span {
+    font-size: 10px; letter-spacing: .13em; text-transform: uppercase; color: var(--fg-3);
+  }
+  .seg { display: flex; gap: 3px; padding: 3px; background: var(--bench-2); border: 1px solid var(--bench-line); border-radius: var(--r-md); }
+  .seg button {
+    appearance: none; border: 0; background: transparent; color: var(--fg-2);
+    font: inherit; font-size: 12.5px; padding: 5px 11px; border-radius: var(--r-sm); cursor: pointer;
+  }
+  .seg button:hover { color: var(--fg); }
+  .seg button[aria-pressed="true"] { background: var(--app-raised); color: var(--fg); }
+  .seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  /* ---------- the stage ---------- */
+
+  .stage {
+    position: relative; display: grid; place-items: center;
+    padding: 56px 24px; margin-bottom: 14px;
+    background:
+      radial-gradient(90% 120% at 50% 0%, #16191d 0%, var(--bench-2) 55%, var(--bench) 100%);
+    border: 1px solid var(--bench-line); border-radius: 14px;
+    overflow-x: auto;
+  }
+
+  .caption { color: var(--fg-3); font-size: 12.5px; margin: 0 0 40px; }
+  .caption strong { color: var(--fg-2); font-weight: 500; }
+
+  /* ---------- the app window ---------- */
+
+  .win {
+    background: var(--app);
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    box-shadow: 0 1px 0 rgba(255,255,255,.03) inset, 0 24px 60px -20px rgba(0,0,0,.9);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    flex: none;
+  }
+  .titlebar {
+    display: flex; align-items: center; gap: 8px;
+    height: 34px; padding: 0 6px 0 12px; flex: none;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .titlebar .name {
+    font-size: 11.5px; letter-spacing: .07em; text-transform: uppercase; color: var(--fg-3);
+  }
+  .titlebar .spacer { flex: 1; }
+  .winbtn {
+    width: 26px; height: 22px; display: grid; place-items: center;
+    color: var(--fg-3); border-radius: var(--r-sm); font-size: 13px; line-height: 1;
+  }
+  .winbtn:hover { background: var(--app-raised); color: var(--fg-2); }
+
+  /* shared atoms */
+  .lbl { font-size: 10px; letter-spacing: .13em; text-transform: uppercase; color: var(--fg-3); }
+  .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .dim { color: var(--fg-2); }
+  .dimmer { color: var(--fg-3); }
+
+  .chev { color: var(--fg-3); font-size: 11px; }
+
+  .rec-btn {
+    appearance: none; font: inherit; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 9px;
+    width: 100%; padding: 11px; border-radius: var(--r-md);
+    background: var(--rec); border: 1px solid #ff6d60; color: #fff; font-weight: 600;
+    letter-spacing: .01em;
+  }
+  .rec-btn:hover { filter: brightness(1.08); }
+  .rec-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  .rec-btn.stop { background: transparent; border-color: var(--rec); color: var(--rec); }
+  .rec-btn[disabled] { background: var(--app-raised); border-color: var(--line); color: var(--fg-3); cursor: not-allowed; }
+  .rec-dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; flex: none; }
+  .rec-sq  { width: 9px; height: 9px; border-radius: 2px; background: currentColor; flex: none; }
+
+  .hint { display: flex; justify-content: center; gap: 6px; align-items: center; font-size: 11.5px; color: var(--fg-3); }
+  kbd {
+    font-family: var(--mono); font-size: 10.5px; padding: 2px 5px; border-radius: var(--r-sm);
+    background: var(--app-sunken); border: 1px solid var(--line); color: var(--fg-2);
+  }
+
+  .toggle {
+    width: 30px; height: 17px; border-radius: 999px; flex: none; position: relative;
+    background: var(--app-sunken); border: 1px solid var(--line); cursor: pointer;
+  }
+  .toggle::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px;
+    border-radius: 50%; background: var(--fg-3); transition: transform .14s ease, background .14s ease;
+  }
+  .toggle.on { background: var(--accent-dim); border-color: var(--accent); }
+  .toggle.on::after { transform: translateX(13px); background: var(--accent); }
+
+  .meter { height: 3px; border-radius: 2px; background: var(--app-sunken); overflow: hidden; flex: 1; }
+  .meter > i { display: block; height: 100%; background: var(--accent); width: 0%; }
+  .meter.hot > i { background: var(--warn); }
+
+  .badge-gpu {
+    font-size: 9.5px; letter-spacing: .08em; text-transform: uppercase;
+    padding: 2px 5px; border-radius: 3px; color: var(--warn);
+    background: rgba(224,163,62,.1); border: 1px solid rgba(224,163,62,.3);
+  }
+
+  /* ---------- variant A — stack ---------- */
+
+  .A { width: 400px; }
+  .A .body { padding: 16px 16px 14px; display: flex; flex-direction: column; gap: 3px; }
+  .A .row {
+    display: flex; align-items: center; gap: 11px;
+    padding: 11px 10px; border-radius: var(--r-md); cursor: pointer;
+  }
+  .A .row:hover { background: var(--app-raised); }
+  .A .row .txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .A .row .val { font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .A .row.off .val { color: var(--fg-3); }
+  .A .rule { height: 1px; background: var(--line-soft); margin: 7px 0; }
+  .A .foot { padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 11px; border-top: 1px solid var(--line-soft); }
+  .A .status { display: flex; flex-direction: column; gap: 11px; }
+  .A .status .top { display: flex; align-items: baseline; gap: 10px; }
+  .A .status .time { font-size: 27px; letter-spacing: .01em; }
+  .A .status .size { font-size: 12.5px; color: var(--fg-3); margin-left: auto; }
+  .A .lvl { display: flex; align-items: center; gap: 9px; }
+  .A .lvl .lbl { width: 52px; flex: none; }
+
+  /* ---------- variant B — canvas ---------- */
+
+  .B { width: 620px; }
+  .B .body { display: flex; flex: 1; min-height: 0; }
+  .B .canvas {
+    flex: 1; padding: 18px; display: flex; flex-direction: column; gap: 13px;
+    border-right: 1px solid var(--line-soft); background: var(--app-sunken);
+  }
+  .B .desk { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; gap: 9px; }
+  .B .mon {
+    position: relative; border-radius: 5px; cursor: pointer;
+    background: #0a0b0d; border: 1px solid var(--line);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+  }
+  .B .mon .n { font-size: 17px; color: var(--fg-3); font-weight: 600; }
+  .B .mon .r { font-size: 9.5px; color: var(--fg-3); }
+  .B .mon:hover { border-color: var(--fg-3); }
+  .B .mon.sel { border-color: var(--accent); background: #101a1d; box-shadow: 0 0 0 1px var(--accent); }
+  .B .mon.sel .n { color: var(--accent); }
+  .B .mon.igpu { border-style: dashed; }
+  .B .mon .gpu { position: absolute; top: 5px; right: 5px; }
+  .B .mon.rec { border-color: var(--rec); box-shadow: 0 0 0 1px var(--rec); background: #1a0f0e; }
+  .B .mon.rec .n { color: var(--rec); }
+  .B .side { width: 232px; flex: none; padding: 16px; display: flex; flex-direction: column; gap: 15px; }
+  .B .slot { display: flex; flex-direction: column; gap: 6px; }
+  .B .slot .hd { display: flex; align-items: center; gap: 8px; }
+  .B .slot .hd .lbl { flex: 1; }
+  .B .slot .dev {
+    font-size: 12.5px; padding: 7px 9px; border-radius: var(--r-sm);
+    background: var(--app-sunken); border: 1px solid var(--line-soft);
+    display: flex; align-items: center; gap: 7px; cursor: pointer;
+    white-space: nowrap; overflow: hidden;
+  }
+  .B .slot .dev span { overflow: hidden; text-overflow: ellipsis; }
+  .B .slot.off .dev { color: var(--fg-3); border-style: dashed; }
+  .B .side .push { margin-top: auto; display: flex; flex-direction: column; gap: 10px; }
+
+  /* ---------- variant C — bar ---------- */
+
+  .C { width: 480px; }
+  .C .body { padding: 14px; display: flex; flex-direction: column; gap: 13px; }
+  .C .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .C .chip {
+    display: flex; align-items: center; gap: 7px; cursor: pointer;
+    padding: 6px 10px; border-radius: 999px; font-size: 12.5px;
+    background: var(--app-raised); border: 1px solid var(--line-soft); color: var(--fg);
+  }
+  .C .chip:hover { border-color: var(--fg-3); }
+  .C .chip .g { color: var(--fg-3); font-size: 11px; }
+  .C .chip.off { color: var(--fg-3); background: transparent; border-style: dashed; }
+  .C .chip.path { margin-left: auto; }
+  .C .live { display: flex; align-items: center; gap: 12px; }
+  .C .live .time { font-size: 21px; }
+  .C .live .size { font-size: 12px; color: var(--fg-3); }
+  .C .live .meters { display: flex; flex-direction: column; gap: 4px; flex: 1; max-width: 120px; }
+  .C .live .stop {
+    margin-left: auto; width: auto; padding: 8px 14px; flex: none;
+  }
+
+  /* ---------- shared: hotkey binding overlay ---------- */
+
+  .bind { padding: 22px 18px; display: flex; flex-direction: column; gap: 14px; align-items: center; text-align: center; }
+  .bind .cap {
+    display: flex; gap: 6px; padding: 14px 18px; border-radius: var(--r-md);
+    background: var(--app-sunken); border: 1px dashed var(--accent);
+  }
+  .bind .msg { font-size: 12.5px; color: var(--warn); display: flex; gap: 7px; align-items: center; }
+  .bind .msg.ok { color: var(--fg-3); }
+  .bind .acts { display: flex; gap: 8px; }
+  .bind .acts button {
+    appearance: none; font: inherit; font-size: 12.5px; cursor: pointer;
+    padding: 7px 14px; border-radius: var(--r-sm);
+    background: var(--app-raised); border: 1px solid var(--line); color: var(--fg);
+  }
+  .bind .acts button:hover { border-color: var(--fg-3); }
+
+  /* ---------- extras ---------- */
+
+  h2 { font-size: 12px; letter-spacing: .13em; text-transform: uppercase; color: var(--fg-3); font-weight: 500; margin: 44px 0 4px; }
+  .h2note { color: var(--fg-3); font-size: 12.5px; margin: 0 0 18px; max-width: 62ch; }
+
+  .extras { display: grid; grid-template-columns: repeat(auto-fit, minmax(268px, 1fr)); gap: 14px; }
+  .card { background: var(--bench-2); border: 1px solid var(--bench-line); border-radius: 10px; padding: 14px; }
+  .card > .lbl { display: block; margin-bottom: 10px; }
+  .card p { margin: 10px 0 0; font-size: 12.5px; color: var(--fg-3); }
+
+  .game {
+    position: relative; height: 132px; border-radius: 6px; overflow: hidden;
+    background: linear-gradient(150deg, #26323f 0%, #16202b 45%, #2a2119 100%);
+  }
+  .game::after {
+    content: "game"; position: absolute; inset: 0; display: grid; place-items: center;
+    font-size: 10px; letter-spacing: .3em; text-transform: uppercase; color: rgba(255,255,255,.13);
+  }
+  .ind-dot { position: absolute; top: 9px; right: 9px; width: 9px; height: 9px; border-radius: 50%; background: var(--rec); opacity: .75; }
+  .ind-pill {
+    position: absolute; top: 8px; right: 8px; display: flex; align-items: center; gap: 6px;
+    padding: 4px 9px; border-radius: 999px; background: rgba(10,11,13,.72); border: 1px solid rgba(255,255,255,.09);
+    font-size: 11px; color: #fff;
+  }
+  .ind-pill .rec-dot { width: 6px; height: 6px; background: var(--rec); }
+  .ind-edge { position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--rec); opacity: .85; }
+
+  .tray { background: var(--app); border: 1px solid var(--line); border-radius: var(--r-md); padding: 5px; width: 190px; }
+  .tray div { padding: 6px 10px; border-radius: var(--r-sm); font-size: 12.5px; display: flex; align-items: center; gap: 8px; }
+  .tray div:hover { background: var(--app-raised); }
+  .tray .sep { height: 1px; padding: 0; margin: 5px 6px; background: var(--line-soft); }
+  .tray .sep:hover { background: var(--line-soft); }
+
+  /* ---------- floating switcher (obviously not part of the design) ---------- */
+
+  .switcher {
+    position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 4px; padding: 5px;
+    background: #f2f4f7; color: #14161a; border-radius: 999px;
+    box-shadow: 0 10px 34px -8px rgba(0,0,0,.75); z-index: 50;
+  }
+  .switcher button {
+    appearance: none; border: 0; background: transparent; cursor: pointer;
+    font: inherit; font-size: 15px; line-height: 1; color: #14161a;
+    width: 30px; height: 30px; border-radius: 50%;
+  }
+  .switcher button:hover { background: rgba(0,0,0,.09); }
+  .switcher button:focus-visible { outline: 2px solid #14161a; outline-offset: 1px; }
+  .switcher .who { font-size: 12.5px; font-weight: 600; padding: 0 10px; white-space: nowrap; }
+  .switcher .who em { font-style: normal; font-weight: 400; opacity: .6; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+<div class="wrap">
+  <p class="eyebrow">Prototype · wayfinder ticket 9</p>
+  <h1>What does the ClipShift window actually look like?</h1>
+  <p class="lede">
+    Three structurally different answers, each rendered in every state a user can put it in.
+    Flip variants with the bar at the bottom or the <kbd>←</kbd> <kbd>→</kbd> keys. These disagree about
+    what the window is <em>for</em> — a settings list, a picture of your desk, or a launcher — not about colour.
+    Throwaway code; the winner gets rewritten properly.
+  </p>
+
+  <div class="bench-bar">
+    <label class="field">
+      <span>State</span>
+      <div class="seg" id="states"></div>
+    </label>
+    <label class="field">
+      <span>Window size</span>
+      <div class="seg"><button id="sizeReadout" aria-pressed="true" tabindex="-1"></button></div>
+    </label>
+  </div>
+
+  <div class="stage" id="stage"></div>
+  <p class="caption" id="caption"></p>
+
+  <h2>On-screen indicator</h2>
+  <p class="h2note">
+    Excluded from the recording itself, so this is purely about how much of the game it eats.
+    Shown at true size over a 132&nbsp;px-tall crop.
+  </p>
+  <div class="extras">
+    <div class="card">
+      <span class="lbl">1 · Dot</span>
+      <div class="game"><i class="ind-dot"></i></div>
+      <p>9&nbsp;px, corner, 75% opacity. Says “on”, nothing else. Cheapest to ignore, easiest to miss.</p>
+    </div>
+    <div class="card">
+      <span class="lbl">2 · Pill</span>
+      <div class="game"><span class="ind-pill"><i class="rec-dot"></i><span class="mono">14:32</span></span></div>
+      <p>Carries elapsed time, which is the one number worth knowing mid-session. Costs more pixels.</p>
+    </div>
+    <div class="card">
+      <span class="lbl">3 · Edge</span>
+      <div class="game"><i class="ind-edge"></i></div>
+      <p>A 2&nbsp;px hairline along the top of the recorded display. Unmistakable, never over the action.</p>
+    </div>
+  </div>
+
+  <h2>Tray</h2>
+  <p class="h2note">The app lives here. Closing the window hides it; only Quit ends the process.</p>
+  <div class="extras">
+    <div class="card">
+      <span class="lbl">Idle menu</span>
+      <div class="tray">
+        <div>Start recording <span class="dimmer" style="margin-left:auto"><span class="mono">Ctrl+Alt+R</span></span></div>
+        <div class="sep"></div>
+        <div>Open ClipShift</div>
+        <div>Open output folder</div>
+        <div class="sep"></div>
+        <div>Quit</div>
+      </div>
+    </div>
+    <div class="card">
+      <span class="lbl">Recording menu</span>
+      <div class="tray">
+        <div><span style="color:var(--rec)">■</span> Stop recording <span class="dimmer mono" style="margin-left:auto">14:32</span></div>
+        <div class="sep"></div>
+        <div>Open ClipShift</div>
+        <div>Open output folder</div>
+        <div class="sep"></div>
+        <div class="dimmer">Quit</div>
+      </div>
+      <p>Quit is disabled while recording — quitting mid-session is the one action that can cost four hours.</p>
+    </div>
+  </div>
+</div>
+
+<div class="switcher" role="group" aria-label="Prototype variant switcher">
+  <button id="prev" aria-label="Previous variant">←</button>
+  <span class="who" id="who"></span>
+  <button id="next" aria-label="Next variant">→</button>
+</div>
+
+<script>
+  const DISPLAYS = [
+    { n: 1, name: "LG 27GP850",   res: "1920 × 1080", hz: "60 Hz", gpu: "RTX 5060 Ti", igpu: false, w: 118, h: 66 },
+    { n: 2, name: "Dell S2421HS", res: "1920 × 1080", hz: "60 Hz", gpu: "RTX 5060 Ti", igpu: false, w: 118, h: 66 },
+    { n: 3, name: "ASUS VA24",    res: "1920 × 1080", hz: "60 Hz", gpu: "Radeon (iGPU)", igpu: true,  w: 118, h: 66 }
+  ];
+  const SEL = 1; // index of the selected display
+  const SYS = "Speakers — Realtek(R) Audio";
+  const MIC = "Shure MV7 — USB Audio";
+  const OUT = "D:\\Recordings\\ClipShift";
+
+  const STATES = [
+    ["first",  "First run"],
+    ["ready",  "Ready"],
+    ["rec",    "Recording"],
+    ["bind",   "Binding hotkey"]
+  ];
+
+  const VARIANTS = {
+    A: { name: "Stack",  size: "400 × 540",
+         note: "A settings list. Every control is a row with the same shape, so nothing is emphasised and nothing is hidden. The record button owns the bottom edge." },
+    B: { name: "Canvas", size: "620 × 460",
+         note: "The display picker is the whole point, drawn as your actual desk. Audio and output are demoted to a side rail. Widest window, most literal." },
+    C: { name: "Bar",    size: "480 × 200",
+         note: "A launcher, not a settings screen. Every control collapses to a chip you only open when changing it. Smallest window, fastest to dismiss." }
+  };
+
+  let variant = new URLSearchParams(location.search).get("variant");
+  if (!VARIANTS[variant]) variant = "A";
+  let state = "ready";
+
+  const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+  function titlebar() {
+    return `<div class="titlebar">
+      <span class="name">ClipShift</span><span class="spacer"></span>
+      <span class="winbtn">–</span><span class="winbtn">✕</span>
+    </div>`;
+  }
+
+  function bindPanel() {
+    return `<div class="bind">
+      <span class="lbl">Press the keys you want</span>
+      <div class="cap"><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>R</kbd></div>
+      <div class="msg">⚠ <span>In use by OBS Studio — pick another chord, or bind it anyway and OBS wins.</span></div>
+      <div class="acts"><button>Cancel</button><button>Bind anyway</button></div>
+    </div>`;
+  }
+
+  function meterRow(label, cls) {
+    return `<div class="lvl"><span class="lbl">${label}</span><span class="meter ${cls}"><i></i></span></div>`;
+  }
+
+  /* ---------------- variant A ---------------- */
+  function renderA() {
+    if (state === "bind") return `<div class="win A">${titlebar()}${bindPanel()}</div>`;
+    const first = state === "first";
+    const rec = state === "rec";
+    const d = DISPLAYS[SEL];
+
+    const row = (label, value, opts = {}) => `
+      <div class="row ${opts.off ? "off" : ""}">
+        ${opts.toggle !== undefined ? `<span class="toggle ${opts.toggle ? "on" : ""}"></span>` : ""}
+        <span class="txt">
+          <span class="lbl">${label}</span>
+          <span class="val">${value}</span>
+        </span>
+        ${opts.badge || ""}
+        <span class="chev">›</span>
+      </div>`;
+
+    return `<div class="win A">
+      ${titlebar()}
+      <div class="body">
+        ${row("Display", first ? "Choose a display" : `${esc(d.name)} <span class="dimmer">· ${d.res}</span>`, { off: first })}
+        <div class="rule"></div>
+        ${row("System audio", first ? "Off" : esc(SYS), { toggle: !first, off: first })}
+        ${row("Microphone", first ? "Off" : esc(MIC), { toggle: !first, off: first })}
+        <div class="rule"></div>
+        ${row("Save to", first ? "Choose a folder" : esc(OUT), { off: first })}
+      </div>
+      <div class="foot">
+        ${rec ? `
+          <div class="status">
+            <div class="top">
+              <span class="time mono" data-clock>00:14:32</span>
+              <span class="size mono">4.31 GB · 1.9 GB free</span>
+            </div>
+            ${meterRow("System", "")}
+            ${meterRow("Mic", "hot")}
+          </div>
+          <button class="rec-btn stop"><span class="rec-sq"></span>Stop recording</button>
+        ` : `
+          <button class="rec-btn" ${first ? "disabled" : ""}><span class="rec-dot"></span>${first ? "Choose a display to start" : "Start recording"}</button>
+        `}
+        <div class="hint">${rec ? "Stop with" : "Or press"} <kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>R</kbd> anywhere</div>
+      </div>
+    </div>`;
+  }
+
+  /* ---------------- variant B ---------------- */
+  function renderB() {
+    if (state === "bind") return `<div class="win B" style="width:420px">${titlebar()}${bindPanel()}</div>`;
+    const first = state === "first";
+    const rec = state === "rec";
+
+    const mons = DISPLAYS.map((d, i) => {
+      const sel = !first && i === SEL;
+      const cls = ["mon", sel ? (rec ? "rec sel" : "sel") : "", d.igpu ? "igpu" : ""].join(" ");
+      return `<div class="${cls}" style="width:${d.w}px;height:${d.h}px">
+        ${d.igpu ? `<span class="badge-gpu gpu" title="Driven by the integrated GPU">iGPU</span>` : ""}
+        <span class="n">${d.n}</span>
+        <span class="r">${d.res}</span>
+      </div>`;
+    }).join("");
+
+    const slot = (label, dev, on) => `
+      <div class="slot ${on ? "" : "off"}">
+        <div class="hd"><span class="lbl">${label}</span><span class="toggle ${on ? "on" : ""}"></span></div>
+        <div class="dev"><span>${on ? esc(dev) : "Not recorded"}</span></div>
+        ${on && rec ? `<span class="meter ${label === "Microphone" ? "hot" : ""}"><i></i></span>` : ""}
+      </div>`;
+
+    return `<div class="win B">
+      ${titlebar()}
+      <div class="body">
+        <div class="canvas">
+          <span class="lbl">Display${first ? " — pick one" : ""}</span>
+          <div class="desk">${mons}</div>
+          <span class="dimmer" style="font-size:11.5px">
+            ${first ? "Three displays found." : `Recording <strong class="dim">${esc(DISPLAYS[SEL].name)}</strong> · ${DISPLAYS[SEL].res} · ${DISPLAYS[SEL].hz}`}
+            ${DISPLAYS.some(d => d.igpu) ? ` <span class="badge-gpu" style="margin-left:4px">Display 3 is on the iGPU — recording it will cost frames</span>` : ""}
+          </span>
+        </div>
+        <div class="side">
+          ${slot("System audio", SYS, !first)}
+          ${slot("Microphone", MIC, !first)}
+          <div class="slot">
+            <div class="hd"><span class="lbl">Save to</span></div>
+            <div class="dev"><span>${first ? "Choose a folder" : esc(OUT)}</span></div>
+          </div>
+          <div class="push">
+            ${rec ? `
+              <div style="display:flex;align-items:baseline;gap:8px">
+                <span class="time mono" style="font-size:22px" data-clock>00:14:32</span>
+                <span class="dimmer mono" style="font-size:11.5px;margin-left:auto">4.31 GB</span>
+              </div>
+              <button class="rec-btn stop"><span class="rec-sq"></span>Stop</button>
+            ` : `
+              <button class="rec-btn" ${first ? "disabled" : ""}><span class="rec-dot"></span>Record</button>
+            `}
+            <div class="hint"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>R</kbd></div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  /* ---------------- variant C ---------------- */
+  function renderC() {
+    if (state === "bind") return `<div class="win C">${titlebar()}${bindPanel()}</div>`;
+    const first = state === "first";
+    const rec = state === "rec";
+
+    if (rec) {
+      return `<div class="win C" style="width:420px">
+        ${titlebar()}
+        <div class="body">
+          <div class="live">
+            <span class="rec-dot" style="background:var(--rec)"></span>
+            <span class="time mono" data-clock>00:14:32</span>
+            <span class="size mono">4.31 GB</span>
+            <span class="meters">
+              <span class="meter"><i></i></span>
+              <span class="meter hot"><i></i></span>
+            </span>
+            <button class="rec-btn stop"><span class="rec-sq"></span>Stop</button>
+          </div>
+          <div class="hint dimmer" style="justify-content:flex-start">
+            ${esc(DISPLAYS[SEL].name)} · System audio + Mic · saving to ${esc(OUT)}
+          </div>
+        </div>
+      </div>`;
+    }
+
+    const chip = (icon, text, off) =>
+      `<span class="chip ${off ? "off" : ""}"><span class="g">${icon}</span>${esc(text)}</span>`;
+
+    return `<div class="win C">
+      ${titlebar()}
+      <div class="body">
+        <div class="chips">
+          ${chip("▣", first ? "No display" : DISPLAYS[SEL].name, first)}
+          ${chip("♪", first ? "No system audio" : "System audio", first)}
+          ${chip("●", first ? "No mic" : "Shure MV7", first)}
+        </div>
+        <div class="chips">
+          ${chip("⌸", first ? "Choose a folder" : OUT, first)}
+        </div>
+        <button class="rec-btn" ${first ? "disabled" : ""}>
+          <span class="rec-dot"></span>${first ? "Pick a display to start" : "Record"}
+        </button>
+        <div class="hint"><kbd>Ctrl</kbd><kbd>Alt</kbd><kbd>R</kbd> anywhere · <kbd>Esc</kbd> to hide</div>
+      </div>
+    </div>`;
+  }
+
+  const RENDER = { A: renderA, B: renderB, C: renderC };
+
+  function draw() {
+    document.getElementById("stage").innerHTML = RENDER[variant]();
+    const v = VARIANTS[variant];
+    document.getElementById("who").innerHTML = `${variant} <em>— ${v.name}</em>`;
+    document.getElementById("sizeReadout").textContent = v.size;
+    document.getElementById("caption").innerHTML = `<strong>${variant} — ${v.name}.</strong> ${v.note}`;
+    document.querySelectorAll("#states button").forEach(b =>
+      b.setAttribute("aria-pressed", String(b.dataset.state === state)));
+    const url = new URL(location.href);
+    url.searchParams.set("variant", variant);
+    history.replaceState(null, "", url);
+  }
+
+  const seg = document.getElementById("states");
+  seg.innerHTML = STATES.map(([k, l]) => `<button data-state="${k}">${l}</button>`).join("");
+  seg.addEventListener("click", e => {
+    const b = e.target.closest("button");
+    if (b) { state = b.dataset.state; draw(); }
+  });
+
+  const keys = Object.keys(VARIANTS);
+  const cycle = step => {
+    variant = keys[(keys.indexOf(variant) + step + keys.length) % keys.length];
+    draw();
+  };
+  document.getElementById("prev").onclick = () => cycle(-1);
+  document.getElementById("next").onclick = () => cycle(1);
+  addEventListener("keydown", e => {
+    if (/^(INPUT|TEXTAREA)$/.test(e.target.tagName) || e.target.isContentEditable) return;
+    if (e.key === "ArrowLeft") cycle(-1);
+    if (e.key === "ArrowRight") cycle(1);
+  });
+
+  /* levels + clock, so "is it actually running" reads at a glance */
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let t = 872;
+  if (!reduced) {
+    setInterval(() => {
+      document.querySelectorAll(".meter > i").forEach((el, i) => {
+        const base = i % 2 ? 34 : 52;
+        el.style.width = Math.max(4, base + Math.sin(Date.now() / (i % 2 ? 210 : 330)) * 26 + Math.random() * 12) + "%";
+      });
+    }, 90);
+    setInterval(() => {
+      t++;
+      const s = String(t % 60).padStart(2, "0");
+      const m = String(Math.floor(t / 60) % 60).padStart(2, "0");
+      const h = String(Math.floor(t / 3600)).padStart(2, "0");
+      document.querySelectorAll("[data-clock]").forEach(el => el.textContent = `${h}:${m}:${s}`);
+    }, 1000);
+  }
+
+  draw();
+</script>
