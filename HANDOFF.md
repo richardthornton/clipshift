@@ -1,6 +1,6 @@
 # ClipShift — session handoff
 
-**Last updated:** 13 August 2026, end of the session that locked the audio file format.
+**Last updated:** 13 August 2026, end of the session that locked the performance budget.
 
 ## What ClipShift is
 
@@ -14,7 +14,7 @@ A minimal, beautiful Windows app that records **one display** to a video-only fi
 
 ## State as of this handoff
 
-**Ten tickets resolved and closed** — seven research tickets, two of the locking decisions, and the
+**Eleven tickets resolved and closed** — seven research tickets, three of the locking decisions, and the
 experiment that validated the first of them against the real NLE.
 
 Research findings live on `main` under [`docs/research/`](docs/research/) — roughly 5,000 lines, every claim cited to a primary source, with explicitly-marked unsettled items in each. The documents are the authority; the ticket summaries are pointers.
@@ -95,6 +95,49 @@ resampler in the path that absorbs exactly the drift the sync design has to meas
 `(DevicePosition, QPCPosition)` pairs. **ClipShift does every conversion itself** — rate, sample format,
 channels. That is what raised #16.
 
+### The performance budget is locked, and it unblocked the hardware spike
+
+[Lock the performance budget and how it is measured](https://github.com/richardthornton/clipshift/issues/13)
+— the full reasoning and the measurement procedure are in the resolution comment; the headline:
+
+| | Budget |
+|---|---|
+| Mean added frame time | ≤ **0.30 ms** |
+| 99th-percentile added frame time | ≤ **1.00 ms** |
+| Additional dropped frames (capped at 60) | **zero** |
+| CPU | ≤ 0.5 core-equivalent sustained |
+| NVENC engine (ClipShift alone) | ≤ 25% — 20% measured, so this is a tripwire not a target |
+| Added SM / copy-engine occupancy | ≤ 3% |
+| Working set | ≤ 300 MB, **zero growth over 4 hours** |
+| Disk | ~5–8 MB/s sustained; the real constraint is the 1-second burst |
+
+**Budgeted in milliseconds and core-equivalents, never percentages** — a percentage budget silently
+loosens on a light game, and it is the 60 fps case that ClipShift is built for. **No number here is
+measured.** This ticket defines the budget and the method; #14 produces the numbers.
+
+Three things came out of it that the ticket did not go in expecting:
+
+1. **ClipShift's GPU cost is per wall-clock second, not per game frame.** It paces at 60 fps CFR no
+   matter what the game presents, so its fixed cost divides across however many frames were produced
+   — at 500 fps it looks eight times cheaper than at 60. **An uncapped run on a light load flatters
+   the result rather than being conservative.** The load must be GPU-bound at roughly 60 fps. Uncapped
+   runs still produce the frame-time numbers; capped-at-60 runs produce the dropped-frame pass/fail;
+   neither substitutes for the other.
+2. **The machine cannot produce a deterministic benchmark load.** Only *six* games are actually
+   installed — Balatro, Dorfromantik, Cairn, As Long As You're Here and Train Sim World 6. The other
+   ~34 Steam entries are lingering manifests for uninstalled titles, GRID 2 (the only built-in
+   benchmark) among them, and Richard ruled out installing a synthetic. So repeatability is bought
+   statistically instead: a **fixed stationary camera** in Train Sim World 6, with the run design in
+   §5 of the resolution doing the work a scripted benchmark would have.
+3. **The preset trade #10 left open partly collapses.** At CONSTQP, `qp` fixes the quality — a slower
+   preset buys better rate-distortion decisions at the *same* quality, which lands as a **smaller
+   file**. p5 vs p7 is GPU-time-for-file-size, not GPU-time-for-quality. p5 stays the default and the
+   burden of proof sits on displacing it.
+
+The test splits in two: the **supporting budgets and the whole 4-hour stability run need no game at
+all** (static desktop + OBS streaming, fully deterministic, and that is the cheap regression gate);
+only the headline frame-time metric needs one.
+
 ## The findings that most changed the picture
 
 1. **The project is viable.** The two risks that could have sunk it are both dead. NVENC coexists with OBS fine — 12 concurrent sessions documented, six measured clean on the reference machine, against folklore claiming 2–3. And multi-hour sync across three separately-clocked files is solvable *by construction*: make each file's length a computation from one QPC epoch rather than a measurement, and the files cannot drift apart. That bounds error at 10.4 µs against a 2 ms budget.
@@ -113,6 +156,16 @@ These cost real effort to pin down and shape several remaining decisions. Do not
 - **No HDR.** Three 1080p60 SDR panels — two `LG FULL HD`, one `KAMN27LSD`.
 - **`E:` is the media drive** — 3.5 TB free, already holding Resolve media and OBS output. `C:` has 313 GB, `D:` has 80 GB.
 - FFmpeg and OBS Studio 32.1.2 are installed; Python 3.14 is available.
+- **Measurement tooling, probed during #13.** **NVIDIA FrameView SDK 1.7.12227.37421622** and **NVIDIA
+  App 11.0.7.247** are installed. **PresentMon, CapFrameX, MSI Afterburner/RTSS and OCAT are not.**
+  #13 chose **Intel PresentMon CLI** as the instrument, so obtaining it (a single executable) is part
+  of #14's setup. GPU driver is **610.62**.
+- **The game library cannot stress the card, and only six titles are actually installed** — Balatro,
+  Dorfromantik, Cairn, As Long As You're Here, Train Sim World 6. Steam shows ~40 entries; the rest are
+  lingering `appmanifest` files for uninstalled games, so **do not trust the manifest list** — check
+  `steamapps\common` on disk. **Train Sim World 6 is the only meaningful GPU load**, with Cairn (UE5)
+  as the fallback. Everything installed is UE or Unity, so nothing exercises an older presentation
+  path and #14's frame-time results will be specific to flip-model presentation.
 - **Resolve can be scripted, but only from inside itself.** The free edition returns `None` from
   `scriptapp("Resolve")` for any external process, and the "External scripting using" preference has
   never been written to `config.dat`. A script dropped in
@@ -128,26 +181,34 @@ These cost real effort to pin down and shape several remaining decisions. Do not
 - [#9 Design the ClipShift window](https://github.com/richardthornton/clipshift/issues/9) — prototype ticket, needs Richard in the room. Independent of everything else.
 - [#12 Lock frame pacing and the constant-frame-rate policy](https://github.com/richardthornton/clipshift/issues/12) — note that the locked 1-second keyframe interval assumes CFR 60. #15 left it one question: an `elst` in a movie timescale of 1000 cannot express a sub-frame offset exactly, and whether Resolve rounds or truncates one was not tested.
 - [#16 Lock the resampler and the drift-correction control loop](https://github.com/richardthornton/clipshift/issues/16) — **new, raised by #11.** Now that ClipShift owns every sample-format conversion, the resampler is its own component doing two jobs at once (44.1→48 rate conversion and the continuous drift lock). Carries a licence edge: Secret Rabbit Code is GPL and incompatible with MIT, soxr is LGPL, and #3 established there is no LGPL obligation anywhere else in the project — so this would be the first.
-- [#13 Lock the performance budget and how it is measured](https://github.com/richardthornton/clipshift/issues/13) — **owns the encoder preset trade.** p5 was locked in #10 as the conservative default because it matches the ~20% NVENC-engine figure measured on this card; #13 may revisit it with real numbers.
+- [#14 Spike the capture-to-encode pipeline on real hardware](https://github.com/richardthornton/clipshift/issues/14) — **newly unblocked by #13.** This is where the architecture meets real silicon; everything else on the map is paper. It carries the budget, the load configuration and the measurement method from #13's resolution, plus the preset sweep.
 
-**Blocked:** [#14 Spike the capture-to-encode pipeline on real hardware](https://github.com/richardthornton/clipshift/issues/14), waiting on #13. This is where the architecture meets real silicon — everything above it is paper.
+**Blocked:** nothing. Every open ticket is takeable.
 
 ## Prompt for the next session
 
-**Recommended: take #13.** It is the only frontier ticket that unblocks another one — #14, the hardware
-spike, is the single place where all of this paper meets real silicon, and #13 is the last thing
-standing in front of it. It also owns the encoder preset trade that #10 deliberately left open. Copy
-this in:
+**Recommended: take #12 next, then #14.** Not #14 immediately, for a reason #13 surfaced: the whole
+performance budget — and specifically the finding that ClipShift's GPU cost is per wall-clock second
+rather than per game frame — rests on ClipShift pacing at a strict **60 fps CFR**. That is exactly what
+#12 has not yet locked. If #12 lands on anything other than strict CFR, #14 will have spiked the wrong
+pipeline and measured it against a budget built on a different assumption. **#12 is small, #14 is the
+biggest ticket on the map, and doing them in that order means the expensive one is not built on a
+guess.** No blocking edge has been wired between them — this is a judgement call, and it was left for
+you to make rather than imposed. Wire it if you agree.
 
 ```
-/wayfinder https://github.com/richardthornton/clipshift/issues/1 — work #13, Lock the performance
-budget and how it is measured.
+/wayfinder https://github.com/richardthornton/clipshift/issues/1 — work #12, Lock frame pacing and
+the constant-frame-rate policy.
 
-Two things this inherits. First, #10 locked preset p5/HQ as a conservative default because it matches
-the ~20% NVENC-engine figure measured on this card, and explicitly left the preset trade to this
-ticket to revisit with real numbers. Second, the metric that matters is in-game FPS impact while OBS
-is streaming — and docs/research/display-capture-api.md is clear that no primary source settles it,
-so this ticket has to define how it will be measured before #14 can measure it.
+This is now upstream of the hardware spike in practice, even though no blocking edge is wired. #13
+locked a performance budget whose central finding — that ClipShift's GPU cost is per wall-clock
+second, not per game frame — assumes strict 60 fps CFR pacing. If this ticket lands anywhere else,
+#13's budget needs revisiting before #14 spends real effort.
+
+Two loose ends this inherits. #10's 1-second keyframe interval assumes CFR 60. And #15 left one
+question untested: an elst in a movie timescale of 1000 cannot express a sub-frame offset exactly,
+and whether Resolve rounds or truncates one was never measured. The rig is in the repo under
+docs/research/experiments/resolve-truncated-import/.
 
 Standing constraint worth restating: the NLE is DaVinci Resolve 20.3.2.9 FREE, not Studio. Check
 format claims against that edition specifically.
@@ -160,15 +221,19 @@ first frontier ticket:
 /wayfinder https://github.com/richardthornton/clipshift/issues/1
 ```
 
-**Two alternatives with a specific reason to prefer them:**
+**The alternatives, with a specific reason to prefer each:**
 
-- **#12**, if you would rather close the loose end #15 left — an `elst` in a movie timescale of 1000
-  cannot express a sub-frame offset exactly, and whether Resolve rounds or truncates one was not
-  tested. The rig is in the repo under
-  [`docs/research/experiments/resolve-truncated-import/`](docs/research/experiments/resolve-truncated-import/).
-- **#16**, if the licence question feels urgent. It is the newest ticket and the only one with a legal
-  edge rather than a technical one: the obvious resampler (Secret Rabbit Code) is GPL and cannot be
-  used in an MIT project at all.
+- **#14**, if you accept the CFR-60 assumption and want the paper tested against silicon now. It is
+  where every architectural decision on this map finally gets checked, and it is **substantially
+  larger than any ticket resolved so far** — a DDA capture path, an NVENC session, a muxer stub, four
+  capture variants and a preset sweep. Expect it to need scoping down or splitting rather than
+  resolving in one session. Its setup is spelled out in a comment on the ticket, and PresentMon still
+  needs obtaining.
+- **#16**, if the licence question feels urgent. It is the only ticket with a legal edge rather than a
+  technical one: the obvious resampler (Secret Rabbit Code) is GPL and cannot be used in an MIT
+  project at all.
+- **#9**, if you want a break from systems work. It is the UI prototype, needs you in the room, and is
+  independent of everything else on the map.
 
 Both Resolve experiment rigs need **one click from Richard per run** — free Resolve refuses external
 scripting connections, so batch everything into a single script before asking. Budget for the harness
@@ -199,5 +264,15 @@ Note that `/wayfinder` is a **user-invocable skill only** (`disable-model-invoca
   you to pin the capture format with `AUTOCONVERTPCM`; do not follow it. The reasoning is in #11's
   resolution. Worth knowing that the two audio documents disagree in more than one place if you are
   reading them fresh — this was the load-bearing one, but it is unlikely to be the only one.
+- **#13's budget numbers are targets, not observations.** 0.30 ms mean and 1.00 ms at the 99th
+  percentile were chosen from a perceptual argument about a 16.67 ms frame on a 60 Hz panel, not
+  measured. If #14 finds the architecture lands at 1.4 ms, that is a conversation about whether the
+  budget was set right — not automatic grounds to reopen #2. But the burden shifts to arguing the
+  budget was wrong, and it should be argued explicitly rather than quietly relaxed.
+- **The #13 measurement method has never been run.** Interleaved pairs, A/A control, bootstrapped
+  percentile CIs — all sound on paper, none exercised. Given that #11 took four passes to get a
+  harness working and #15 needed several, **assume the first #14 session is spent getting the harness
+  right rather than getting numbers**. The A/A control run is the thing that will tell you the harness
+  works, so run it first and do not skip it.
 - **Nothing has been built.** There is no application code, no project file, no solution. That is correct — the destination is a spec.
 - **Agent worktrees under `.claude/worktrees/` are gitignored** and can be deleted freely. The research branches are all pushed to origin, so nothing is lost by removing them.
