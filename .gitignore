@@ -19,3 +19,9 @@ desktop.ini
 *.mkv
 *.wav
 out/
+
+# Measurement tools — fetched by docs/research/experiments/perf-harness/fetch-presentmon.ps1
+tools/
+
+# Harness output
+docs/research/experiments/perf-harness/results/

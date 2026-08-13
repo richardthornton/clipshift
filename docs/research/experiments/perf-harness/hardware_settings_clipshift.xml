@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!-- ClipShift measurement load: GRID 2 graphics settings.
+
+  Derived from system/hardware_settings_config.xml in the GRID 2 install, with every
+  quality knob raised. The goal is NOT a pretty picture: issue #13 requires the load to
+  be GPU-bound at roughly 60 fps, because ClipShift's cost is fixed per wall-clock
+  second rather than per game frame. A load running at 400 fps divides ClipShift's cost
+  across 400 frames and makes it look ~7x cheaper than it is. See README.md section
+  "Driving the load GPU-bound".
+
+  <resolution> stays at the panel's native 1920x1080 with vsync off. If maxed settings
+  still will not pull the frame rate down to ~60 on the reference 5060 Ti (and for a
+  2013 title they very likely will not), the resolution here is raised to a DSR factor
+  instead (see README). DSR renders high and downsamples to 1080p, so the *displayed*
+  surface DXGI Desktop Duplication captures stays 1080p, which is the scenario being
+  measured. Raising the panel resolution itself is not an option and would change what
+  is being captured.
+
+  Do not hand-edit this during a measurement session. Changing the load invalidates the
+  noise floor, and every run in a comparison has to have been taken against the same one.
+-->
+<hardware_settings_config version="11" deviceId="" >
+    <cpu>
+        <threadStrategy workerMapFile="system/workerMap8Core.xml" forceFeedbackProcessor="0" dvdStorageProcessor="0" dataSetMonitorProcessor="0" renderProcessor="0" updateProcessor="0" fileStreamProcessor="0"/>
+    </cpu>
+    <audio_card>
+        <dynamic_range value="high" />
+        <eq value="flat" />
+        <voice_chat enabled="false" />
+        <push_to_talk enabled="false" />
+    </audio_card>
+
+    <graphics_card>
+       <directx forcedx10="false" />
+       <eyefinity force="" osd="" />
+       <stereo enabled="false" separation="0.015" convergence="0.5" />
+       <advanced forward="false" global_illumination="true" />
+       <intel tree_aoit="false" particle_avsm="false" />
+       <!-- vsync=0 is required: the uncapped run produces the frame-time numbers.
+            The capped-at-60 run for the dropped-frame criterion is a separate pass. -->
+       <resolution width="1920" height="1080" aspect="normal" fullscreen="true" vsync="0" multisampling="8xmsaa" >
+            <refreshRate rate="60" />
+       </resolution>
+       <gamma level="0.8" />
+    </graphics_card>
+    <shadows enabled="true" size="4096" maskQuality="2" particles="true" />
+    <advanced_fog enabled="true" />
+    <particles enabled="true" wind="true" dynamicRes="false" lowResScalar="1" />
+    <crowd enabled="true" detail="2" />
+    <cloth enabled="true" />
+    <postprocess quality="3" />
+    <groundcover mode="blended" clutter="true" />
+    <objects lod="2.0" maxlod="0" />
+    <trees lod="2.0" maxlod="0" />
+    <vehicles characterQuality="2" lodQuality="2" hires_ai_livery="1" />
+    <envmap faces="6" size="1024" drawallobjects="true" scaleminsize="1.0" mindistance="0.0" />
+    <water update="true" detail="2" scale="8" />
+    <skidmarks enabled="true" />
+    <dynamic_ambient_occ enabled="true" quality="2" />
+    <dynamic_ambient_occ_soft enabled="true" />
+    <night_lighting volumes="true" lights="2" shadows="true" />
+    <anisotropic min="16" max="16" />
+    <physics environmentalDamage="true" vehicleDamage="true" />
+    <input device_type="auto" />
+    <motion enabled="false" ip="dbox" port="20777" delay="1" extradata="0" />
+    <screenshotMode enabled="false" />
+</hardware_settings_config>

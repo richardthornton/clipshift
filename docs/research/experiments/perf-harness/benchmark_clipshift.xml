@@ -1,0 +1,35 @@
+<?xml version="1.0" standalone="yes" ?>
+<!-- ClipShift measurement load: GRID 2 scripted benchmark.
+
+  Invoked as:  grid2.exe -benchmark <path to this file>
+
+  Tuned for measurement repeatability rather than for a representative race:
+
+    cycle_camera="false"   The stock example cycles cameras, which changes what is
+                           drawn from run to run. A fixed camera is the whole point.
+    infinite_loop="true"   Runs need to be >=120 s per issue #13 section 5, and a
+                           single lap is not reliably that long. Looping lets the
+                           harness own the run length instead of the track owning it.
+    skipreplays="true"     The post-race replay is a different scene with a different
+                           GPU cost; it would contaminate the window.
+    number_cars="1"        The stock example uses 8. Its own comment warns "there may
+                           be some variation in results when using more than 1 car".
+                           AI cars are a nondeterminism source, and this harness is
+                           spending everything it has on determinism.
+    lighting/weather       Pinned to day/dry. Wet reflections are a large, variable
+                           GPU cost.
+
+  hardwaresettings points at the ClipShift settings file rather than the player's own,
+  so the load is pinned by this repo and not by whatever was last clicked in the
+  options menu. See README.md; that file has to be tuned until the game is GPU-bound
+  at roughly 60 fps, which is issue #13's central requirement for this measurement.
+-->
+<config outputfilename="ClipShift_Benchmark"
+        hardwaresettings="hardware_settings_clipshift.xml"
+        cycle_camera="false"
+        skipreplays="true"
+        infinite_loop="true" >
+  <track country="cities" name="chicago" route="route_0" lighting="day" weather="dry" laps="1" number_cars="1" >
+    <car name="z06" livery="ta_002" ai_driver="Average1_1" ai_driver0="Cau_Demo_1_0" grid="0" />
+  </track>
+</config>
