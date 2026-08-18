@@ -4,6 +4,21 @@
 **Status:** research complete — recommendation below is stated to be implementable as written.
 **Date:** 2026-08-11
 
+> **⚠️ Parts of this document have been overruled by later decisions.** It is kept as the research
+> record of ticket #5, not as the current spec. Where it disagrees with a ticket resolution, **the ticket
+> wins**.
+>
+> | Section | Overruled by | What changed |
+> |---|---|---|
+> | §7, the suspend/resume row | [#21](https://github.com/richardthornton/clipshift/issues/21) | The configurable threshold is **deleted, not tuned**. *Any* completed suspend/resume finalises and stops the recording — there is no short-gap padding case and no key to set. A threshold can only choose whether to *disclose* a gap, never prevent one. |
+> | §10.2 | [#12](https://github.com/richardthornton/clipshift/issues/12) | `T0` is the record instant unconditionally. Ticks before the first real surface emit counted **black frames**; waiting for a first surface hangs forever on a static screen. |
+> | §10.5, format pinning | [#11](https://github.com/richardthornton/clipshift/issues/11) | Do **not** pin the capture format with `AUTOCONVERTPCM \| SRC_DEFAULT_QUALITY`. ClipShift does every conversion itself — those flags put an in-engine resampler in the path that absorbs exactly the drift the sync design has to measure. |
+> | §10.5, the resampler and its ~20 ms positional-error threshold | [#16](https://github.com/richardthornton/clipshift/issues/16) | Overruled **in full on the resampler**. Group delay is a one-time pre-roll, not a per-call query; positional error is arithmetically zero under the invariant, so the real state variable is buffer **occupancy** — floor 0, ceiling 500 ms. |
+>
+> §7's *other* rows stand. So does its structural note — that every stream being a pure function of one
+> clock keeps the three files mutually aligned even under a *wrong* response — which is the load-bearing
+> argument #21 used to decide that almost nothing should stop a recording.
+
 ---
 
 ## 0. The answer in one paragraph
