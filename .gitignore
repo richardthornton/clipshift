@@ -25,3 +25,7 @@ tools/
 
 # Harness output
 docs/research/experiments/perf-harness/results/
+
+# Spike build output
+docs/research/experiments/capture-encode-spike/bin/
+docs/research/experiments/capture-encode-spike/obj/
