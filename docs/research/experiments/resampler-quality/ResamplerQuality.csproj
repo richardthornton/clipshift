@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>ResamplerQuality</AssemblyName>
+    <RootNamespace>ClipShift.ResamplerQuality</RootNamespace>
+    <Optimize>true</Optimize>
+    <!-- The SNR figures are the point of this program; never let the JIT trade
+         accuracy for speed in the sinc accumulator. -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>
